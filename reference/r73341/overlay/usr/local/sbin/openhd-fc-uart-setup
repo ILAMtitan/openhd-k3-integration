@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+settings=/usr/local/share/openhd/telemetry/air_settings.json
+service=openhd.service
+restart=yes
+
+usage() {
+  cat <<'EOF'
+Usage:
+  openhd-fc-uart-setup --list
+  openhd-fc-uart-setup --status
+  openhd-fc-uart-setup --device /dev/ttyXXX [--baud RATE] [--flow-control]
+  openhd-fc-uart-setup --disable
+
+Options:
+  --device PATH       Select the flight-controller UART.
+  --baud RATE         UART baud rate (default: 115200).
+  --flow-control      Enable RTS/CTS hardware flow control.
+  --no-flow-control   Disable RTS/CTS hardware flow control (default).
+  --disable           Disable the FC UART without disabling OpenHD telemetry.
+  --list              List discovered UARTs and mark protected consoles.
+  --status            Show the current OpenHD FC UART configuration.
+  --no-restart        Do not restart openhd.service after changing settings.
+  -h, --help          Show this help.
+
+The BeagleY-AI console UART /dev/ttyS2 is always protected and cannot be
+selected while this image profile uses it for the Linux console.
+EOF
+}
+
+active_console_names() {
+  {
+    cat /sys/class/tty/console/active 2>/dev/null || true
+    tr ' ' '\n' </proc/cmdline 2>/dev/null |
+      sed -n 's/^console=\([^,[:space:]]*\).*/\1/p'
+    printf '%s\n' ttyS2
+  } | tr ' ' '\n' | sed '/^$/d' | sort -u
+}
+
+resolved_basename() {
+  local path=$1 resolved
+  resolved=$(readlink -f -- "$path" 2>/dev/null || true)
+  basename -- "${resolved:-$path}"
+}
+
+is_protected_console() {
+  local path=$1 name
+  name=$(resolved_basename "$path")
+  active_console_names | grep -Fxq -- "$name"
+}
+
+list_uarts() {
+  local found=no path name state
+  declare -A seen=()
+  shopt -s nullglob
+  for path in /dev/serial/by-id/* /dev/ttyACM* /dev/ttyUSB* /dev/ttyAMA* /dev/ttyS*; do
+    [[ -e "$path" ]] || continue
+    name=$(readlink -f -- "$path" 2>/dev/null || printf '%s' "$path")
+    [[ -n ${seen[$name]+x} ]] && continue
+    seen[$name]=1
+    found=yes
+    if is_protected_console "$path"; then
+      state='PROTECTED CONSOLE'
+    else
+      state='available'
+    fi
+    printf '%-32s -> %-24s %s\n' "$path" "$name" "$state"
+  done
+  shopt -u nullglob
+  [[ $found == yes ]] || echo 'No UART device nodes found.'
+}
+
+show_status() {
+  echo "Protected console UARTs: $(active_console_names | paste -sd, -)"
+  if [[ ! -f $settings ]]; then
+    echo "OpenHD telemetry settings do not exist yet: $settings"
+    return 1
+  fi
+  jq '{fc_uart_connection_type,fc_uart_baudrate,fc_uart_flow_control}' "$settings"
+  local configured
+  configured=$(jq -r '.fc_uart_connection_type // ""' "$settings")
+  if [[ -n $configured ]] && is_protected_console "$configured"; then
+    echo "WARNING: configured UART is protected and OpenHD will refuse to open it." >&2
+  fi
+}
+
+valid_baud() {
+  case $1 in
+    9600|19200|38400|57600|115200|230400|460800|500000|576000|921600|1000000)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+mode=
+device=
+baud=115200
+flow=false
+while (($#)); do
+  case $1 in
+    --list) mode=list ;;
+    --status) mode=status ;;
+    --device)
+      [[ $# -ge 2 ]] || { echo '--device requires a path' >&2; exit 2; }
+      mode=device
+      device=$2
+      shift
+      ;;
+    --baud)
+      [[ $# -ge 2 ]] || { echo '--baud requires a rate' >&2; exit 2; }
+      baud=$2
+      shift
+      ;;
+    --flow-control) flow=true ;;
+    --no-flow-control) flow=false ;;
+    --disable) mode=disable ;;
+    --no-restart) restart=no ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+case $mode in
+  list)
+    list_uarts
+    exit 0
+    ;;
+  status)
+    show_status
+    exit 0
+    ;;
+  device|disable)
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+[[ $EUID -eq 0 ]] || { echo 'Run as root.' >&2; exit 1; }
+command -v jq >/dev/null || { echo 'jq is required.' >&2; exit 1; }
+[[ -f $settings ]] || {
+  echo "OpenHD telemetry settings do not exist yet: $settings" >&2
+  echo 'Start OpenHD once, then rerun this command.' >&2
+  exit 1
+}
+
+if [[ $mode == device ]]; then
+  [[ $device == /dev/* ]] || { echo 'UART path must begin with /dev/.' >&2; exit 2; }
+  [[ -c $device ]] || { echo "Not a character device: $device" >&2; exit 1; }
+  valid_baud "$baud" || { echo "Unsupported baud rate: $baud" >&2; exit 2; }
+  if is_protected_console "$device"; then
+    echo "Refusing protected console UART: $device" >&2
+    echo 'Choose another UART from: openhd-fc-uart-setup --list' >&2
+    exit 1
+  fi
+else
+  device=
+  flow=false
+fi
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+jq \
+  --arg device "$device" \
+  --argjson baud "$baud" \
+  --argjson flow "$flow" \
+  '.fc_uart_connection_type = $device |
+   .fc_uart_baudrate = $baud |
+   .fc_uart_flow_control = $flow' \
+  "$settings" >"$tmp"
+install -o root -g root -m 0644 "$tmp" "$settings"
+
+if [[ $restart == yes ]]; then
+  systemctl restart "$service"
+fi
+show_status

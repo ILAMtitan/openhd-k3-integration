@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenHD camera RTP bridge using TI K3 accelerator platform
+After=ti-k3-accelerators.target ti-k3-imx219-prepare.service network.target
+Requires=ti-k3-accelerators.target ti-k3-imx219-prepare.service
+Before=openhd.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/openhd-ti-camera
+EnvironmentFile=-/etc/ti-k3/gstreamer.env
+ExecStart=/usr/local/sbin/openhd-ti-camera-bridge
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=10

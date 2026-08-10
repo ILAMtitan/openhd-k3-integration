@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SYS_CLASS_NET="${OPENHD_SYS_CLASS_NET:-/sys/class/net}"
+
+is_openhd_radio() {
+    local iface="$1" driver=""
+    [[ -e "${SYS_CLASS_NET}/${iface}" ]] || return 1
+    driver=$(basename "$(readlink -f "${SYS_CLASS_NET}/${iface}/device/driver" 2>/dev/null || true)")
+    [[ "${driver}" == rtl88xxau_ohd || "${driver}" == 88XXau_ohd ]] && return 0
+    driver=$(ethtool -i "${iface}" 2>/dev/null | awk '/^driver:/ {print $2; exit}')
+    [[ "${driver}" == rtl88xxau_ohd || "${driver}" == 88XXau_ohd ]]
+}
+
+guard_iface() {
+    local iface="$1" openhd_active=no
+    is_openhd_radio "${iface}" || return 0
+    systemctl is-active --quiet openhd.service 2>/dev/null && openhd_active=yes
+    echo "Protecting OpenHD RF interface from management networking: ${iface} (openhd_active=${openhd_active})"
+
+    systemctl stop "wpa_supplicant@${iface}.service" 2>/dev/null || true
+    systemctl stop "iwd@${iface}.service" 2>/dev/null || true
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli device disconnect "${iface}" >/dev/null 2>&1 || true
+        nmcli device set "${iface}" managed no >/dev/null 2>&1 || true
+    fi
+    ip address flush dev "${iface}" 2>/dev/null || true
+
+    # During boot, keep the device down until OpenHD claims it. During runtime
+    # hotplug, never race OpenHD by forcing a newly detected interface down or
+    # disconnecting it after monitor-mode setup has begun.
+    if [[ "${openhd_active}" == no ]]; then
+        iw dev "${iface}" disconnect 2>/dev/null || true
+        ip link set "${iface}" down 2>/dev/null || true
+    else
+        echo "OpenHD is active; preserving ${iface} link/mode for hotplug recovery"
+    fi
+}
+
+if [[ $# -gt 1 ]]; then
+    echo "Usage: openhd-radio-network-guard [interface]" >&2
+    exit 2
+fi
+if [[ $# -eq 1 ]]; then
+    guard_iface "$1"
+else
+    for netdev in "${SYS_CLASS_NET}"/*; do
+        [[ -e "${netdev}" ]] || continue
+        guard_iface "${netdev##*/}"
+    done
+fi

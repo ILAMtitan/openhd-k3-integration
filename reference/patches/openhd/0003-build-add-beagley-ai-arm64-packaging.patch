@@ -1,0 +1,77 @@
+From bdc24ecf66574637e85687a1e220112162e1c5ce Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Thu, 23 Jul 2026 01:16:29 +0000
+Subject: [PATCH] build: add CPU-only BeagleY-AI and ARM64 package paths
+
+---
+ install_build_dep.sh |  9 ++++++++-
+ package.sh           | 12 +++++++++++-
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/install_build_dep.sh b/install_build_dep.sh
+index 1183012..5f05f73 100755
+--- a/install_build_dep.sh
++++ b/install_build_dep.sh
+@@ -4,7 +4,7 @@ PLATFORM="$1"
+ 
+ 
+ BASE_PACKAGES="libpoco-dev clang-format libusb-1.0-0-dev libpcap-dev libsodium-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev libsdl2-dev"
+-VIDEO_PACKAGES="libgstreamer-plugins-base1.0-dev libv4l-dev"
++VIDEO_PACKAGES="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libv4l-dev"
+ BUILD_PACKAGES="git build-essential autotools-dev automake libtool python3-pip autoconf apt-transport-https ruby-dev cmake"
+ 
+ 
+@@ -19,6 +19,10 @@ PLATFORM_PACKAGES_REMOVE=""
+ function install_rock_packages {
+ PLATFORM_PACKAGES="libpoco-dev gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
+ PLATFORM_PACKAGES_REMOVE=""
++}
++function install_beagley_ai_packages {
++PLATFORM_PACKAGES="gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav v4l-utils"
++PLATFORM_PACKAGES_REMOVE=""
+ }
+ 
+  # Add OpenHD Repository platform-specific packages
+@@ -36,6 +40,9 @@ PLATFORM_PACKAGES_REMOVE=""
+     install_x86_packages
+  elif [[ "${PLATFORM}" == "rock5" ]] ; then
+     install_rock_packages
++ elif [[ "${PLATFORM}" == "beagley-ai" ]] ; then
++    install_beagley_ai_packages
+  else
+     echo "platform not supported"
++    exit 1
+  fi
+diff --git a/package.sh b/package.sh
+index c37f4d9..56257f1 100755
+--- a/package.sh
++++ b/package.sh
+@@ -20,7 +20,7 @@ create_package_directory() {
+     if [[ "${PACKAGE_ARCH}" == "armhf" && "${OS}" == "raspbian" ]]; then
+       echo "Using Raspberry Pi-specific systemd service for armhf Bullseye"
+       cp systemd/openhd_rpi.service "${PKGDIR}etc/systemd/system/openhd.service"
+-    elif [[ "${CUSTOM}" == "standard" ]]; then
++    elif [[ "${CUSTOM}" == "standard" || "${CUSTOM}" == "beagley-ai" ]]; then
+       cp systemd/openhd.service "${PKGDIR}etc/systemd/system/openhd.service"
+     else
+       cp systemd/openhd-x20.service "${PKGDIR}etc/systemd/system/openhd.service"
+@@ -52,6 +52,16 @@ build_package() {
+         gstreamer1.0-plugins-{base,good,bad} gstreamer1.0-tools
+       )
+     fi
++  elif [[ "${PACKAGE_ARCH}" == "arm64" ]]; then
++    package_name="openhd"
++    packages+=(
++      libpoco-dev iw nmap aircrack-ng i2c-tools libv4l-dev
++      libusb-1.0-0 libpcap-dev libnl-3-dev libnl-genl-3-dev
++      libnl-route-3-dev libsdl2-2.0-0 libsodium-dev
++      gstreamer1.0-plugins-base gstreamer1.0-plugins-good
++      gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
++      gstreamer1.0-libav gstreamer1.0-tools
++    )
+   elif [[ "${PACKAGE_ARCH}" == "x86_64" ]]; then
+     packages+=(
+       libpoco-dev dkms qopenhd git iw nmap aircrack-ng i2c-tools libv4l-dev
+-- 
+2.47.3
+

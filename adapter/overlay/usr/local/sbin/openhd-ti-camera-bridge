@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mode="${OPENHD_CAMERA_MODE:-test-wave5}"
+case "$mode" in
+  imx219|imx219-ti-isp|imx708)
+    [[ -r /run/ti-k3/camera.env ]] || { echo "TI K3 camera contract is unavailable: /run/ti-k3/camera.env" >&2; exit 1; }
+    # shellcheck source=/dev/null
+    source /run/ti-k3/camera.env
+    OPENHD_CAMERA_VIDEO_DEVICE=${OPENHD_CAMERA_VIDEO_DEVICE:-${TI_K3_CAMERA_VIDEO_DEVICE:-}}
+    OPENHD_CAMERA_SUBDEV_DEVICE=${OPENHD_CAMERA_SUBDEV_DEVICE:-${TI_K3_CAMERA_SUBDEV_DEVICE:-}}
+    OPENHD_CAMERA_SENSOR_NAME=${OPENHD_CAMERA_SENSOR_NAME:-${TI_K3_CAMERA_SENSOR_NAME:-}}
+    OPENHD_CAMERA_BAYER_FORMAT=${OPENHD_CAMERA_BAYER_FORMAT:-${TI_K3_CAMERA_BAYER_FORMAT:-rggb}}
+    OPENHD_CAMERA_FORMAT_MSB=${OPENHD_CAMERA_FORMAT_MSB:-${TI_K3_CAMERA_FORMAT_MSB:-7}}
+    OPENHD_CAMERA_DCC_VISS=${OPENHD_CAMERA_DCC_VISS:-${TI_K3_CAMERA_DCC_VISS:-}}
+    OPENHD_CAMERA_DCC_2A=${OPENHD_CAMERA_DCC_2A:-${TI_K3_CAMERA_DCC_2A:-}}
+    OPENHD_CAMERA_CSI_V4L2_IO_MODE=${OPENHD_CAMERA_CSI_V4L2_IO_MODE:-${TI_K3_CAMERA_CSI_V4L2_IO_MODE:-dmabuf-import}}
+    OPENHD_CAMERA_TIOVX_SINK_POOL_SIZE=${OPENHD_CAMERA_TIOVX_SINK_POOL_SIZE:-${TI_K3_CAMERA_TIOVX_SINK_POOL_SIZE:-8}}
+    OPENHD_CAMERA_TIOVX_SRC_POOL_SIZE=${OPENHD_CAMERA_TIOVX_SRC_POOL_SIZE:-${TI_K3_CAMERA_TIOVX_SRC_POOL_SIZE:-8}}
+    ;;
+esac
+codec="${OPENHD_CAMERA_CODEC:-h264}"
+host="${OPENHD_CAMERA_RTP_HOST:-127.0.0.1}"
+port="${OPENHD_CAMERA_RTP_PORT:-5500}"
+mtu="${OPENHD_CAMERA_RTP_MTU:-1024}"
+bitrate="${OPENHD_CAMERA_BITRATE:-3000000}"
+gop="${OPENHD_CAMERA_GOP:-15}"
+w="${OPENHD_CAMERA_WIDTH:-1280}"
+h="${OPENHD_CAMERA_HEIGHT:-720}"
+fps="${OPENHD_CAMERA_FPS:-30}"
+sensor_w="${OPENHD_CAMERA_SENSOR_WIDTH:-$w}"
+sensor_h="${OPENHD_CAMERA_SENSOR_HEIGHT:-$h}"
+sensor_fps="${OPENHD_CAMERA_SENSOR_FPS:-$fps}"
+for value in "$port" "$mtu" "$bitrate" "$gop" "$w" "$h" "$fps" "$sensor_w" "$sensor_h" "$sensor_fps"; do
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid numeric camera setting: $value" >&2; exit 2; }
+done
+[[ "$codec" == h264 ]] || { echo "R12 validates H.264; requested codec=$codec" >&2; exit 2; }
+
+queue=(queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream '!')
+rtp=(h264parse config-interval=-1 '!' rtph264pay pt=96 mtu="$mtu" config-interval=-1 '!' udpsink host="$host" port="$port" sync=false async=false)
+h264_level="${OPENHD_CAMERA_H264_LEVEL:-auto}"
+if [[ "$h264_level" == auto ]]; then
+  if (( w <= 1280 && h <= 720 && fps <= 30 )); then h264_level=9; else h264_level=11; fi
+fi
+[[ "$h264_level" =~ ^[0-9]+$ ]] || { echo "Invalid OPENHD_CAMERA_H264_LEVEL=$h264_level" >&2; exit 2; }
+h264_profile="${OPENHD_CAMERA_H264_PROFILE:-0}"
+[[ "$h264_profile" =~ ^[0-9]+$ ]] || { echo "Invalid OPENHD_CAMERA_H264_PROFILE=$h264_profile" >&2; exit 2; }
+prepend_sps_pps=0
+[[ "${OPENHD_CAMERA_PREPEND_SPS_PPS:-yes}" == yes ]] && prepend_sps_pps=1
+controls="controls,${OPENHD_CAMERA_WAVE5_EXTRA_CONTROLS:-frame_level_rate_control_enable=1},video_bitrate=${bitrate},video_gop_size=${gop},h264_level=${h264_level},h264_profile=${h264_profile},prepend_sps_and_pps_to_idr=${prepend_sps_pps}"
+
+wave5_encoder() {
+  local request_dmabuf="${1:-no}"
+  local args=(v4l2h264enc name=ti_wave5_encoder extra-controls="$controls")
+  if [[ "$request_dmabuf" == yes && "${OPENHD_CAMERA_USE_DMABUF_IMPORT:-no}" == yes ]] && gst-inspect-1.0 v4l2h264enc | grep -q 'output-io-mode'; then
+    args+=(output-io-mode=dmabuf-import)
+  fi
+  printf '%s\0' "${args[@]}"
+}
+run_pipeline() {
+  printf 'Starting camera mode %s, RTP %s:%s, output %sx%s@%s\n' "$mode" "$host" "$port" "$w" "$h" "$fps"
+  printf 'gst-launch arguments:'; printf ' %q' "$@"; echo
+  exec gst-launch-1.0 -e -v "$@"
+}
+mapfile -d '' -t enc_system < <(wave5_encoder no)
+mapfile -d '' -t enc_dmabuf < <(wave5_encoder yes)
+
+case "$mode" in
+  test-cpu)
+    run_pipeline videotestsrc is-live=true pattern=ball '!' \
+      "video/x-raw,format=I420,width=${w},height=${h},framerate=${fps}/1" '!' \
+      x264enc name=swencoder bitrate="$((bitrate/1000))" speed-preset=ultrafast tune=zerolatency threads=2 key-int-max="$gop" '!' \
+      "${rtp[@]}"
+    ;;
+  test-wave5)
+    run_pipeline videotestsrc is-live=true pattern=ball '!' \
+      "video/x-raw,format=NV12,width=${w},height=${h},framerate=${fps}/1,colorimetry=bt709" '!' \
+      "${queue[@]}" "${enc_system[@]}" '!' video/x-h264,stream-format=byte-stream,alignment=au '!' "${rtp[@]}"
+    ;;
+  usb-h264)
+    run_pipeline v4l2src device="${OPENHD_CAMERA_VIDEO_DEVICE}" do-timestamp=true '!' \
+      "video/x-h264,width=${w},height=${h},framerate=${fps}/1" '!' "${rtp[@]}"
+    ;;
+  usb-wave5)
+    io_mode="${OPENHD_CAMERA_V4L2_IO_MODE:-dmabuf}"
+    pipe=(v4l2src device="${OPENHD_CAMERA_VIDEO_DEVICE}" io-mode="$io_mode" do-timestamp=true '!' \
+      "video/x-raw,format=${OPENHD_CAMERA_RAW_FORMAT:-NV12},width=${w},height=${h},framerate=${fps}/1" '!' "${queue[@]}")
+    [[ "${OPENHD_CAMERA_CONVERT_TO_NV12:-no}" == yes ]] && pipe+=(videoconvert '!' video/x-raw,format=NV12 '!')
+    if [[ "$io_mode" == dmabuf || "$io_mode" == 5 ]]; then pipe+=("${enc_dmabuf[@]}"); else pipe+=("${enc_system[@]}"); fi
+    pipe+=('!' video/x-h264,stream-format=byte-stream,alignment=au '!' "${rtp[@]}")
+    run_pipeline "${pipe[@]}"
+    ;;
+  imx219|imx219-ti-isp|imx708)
+    : "${OPENHD_CAMERA_VIDEO_DEVICE:?camera capture device is unresolved}"
+    : "${OPENHD_CAMERA_SUBDEV_DEVICE:?camera subdevice is unresolved}"
+    : "${OPENHD_CAMERA_SENSOR_NAME:?camera sensor name is unresolved}"
+    : "${OPENHD_CAMERA_DCC_VISS:?VISS DCC path is unresolved}"
+    : "${OPENHD_CAMERA_DCC_2A:?2A DCC path is unresolved}"
+    [[ -e "$OPENHD_CAMERA_VIDEO_DEVICE" ]] || { echo "Missing camera capture device: $OPENHD_CAMERA_VIDEO_DEVICE" >&2; exit 1; }
+    [[ -e "$OPENHD_CAMERA_SUBDEV_DEVICE" ]] || { echo "Missing camera subdevice: $OPENHD_CAMERA_SUBDEV_DEVICE" >&2; exit 1; }
+    [[ -s "$OPENHD_CAMERA_DCC_VISS" && -s "$OPENHD_CAMERA_DCC_2A" ]] || { echo "Sensor DCC files are required" >&2; exit 1; }
+    csi_io_mode="${OPENHD_CAMERA_CSI_V4L2_IO_MODE:-dmabuf-import}"
+    case "$csi_io_mode" in auto|rw|mmap|userptr|dmabuf|dmabuf-import|[0-5]) ;; *) echo "Invalid OPENHD_CAMERA_CSI_V4L2_IO_MODE=$csi_io_mode" >&2; exit 2;; esac
+    tiovx_sink_pool="${OPENHD_CAMERA_TIOVX_SINK_POOL_SIZE:-8}"
+    tiovx_src_pool="${OPENHD_CAMERA_TIOVX_SRC_POOL_SIZE:-8}"
+    [[ "$tiovx_sink_pool" =~ ^[1-9][0-9]*$ && "$tiovx_src_pool" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid TIOVX pool size" >&2; exit 2; }
+    /usr/local/sbin/ti-k3-rpmsg-ready --wait "${OPENHD_RPMSG_READY_TIMEOUT_SECONDS:-10}"
+    pipe=(v4l2src device="$OPENHD_CAMERA_VIDEO_DEVICE" io-mode="$csi_io_mode" do-timestamp=true '!' \
+      "video/x-bayer,format=${OPENHD_CAMERA_BAYER_FORMAT:-rggb},width=${sensor_w},height=${sensor_h},framerate=${sensor_fps}/1" '!' \
+      tiovxisp sensor-name="$OPENHD_CAMERA_SENSOR_NAME" dcc-isp-file="$OPENHD_CAMERA_DCC_VISS" format-msb="${OPENHD_CAMERA_FORMAT_MSB:-7}" \
+      "sink_0::pool-size=${tiovx_sink_pool}" "src::pool-size=${tiovx_src_pool}" \
+      "sink_0::dcc-2a-file=${OPENHD_CAMERA_DCC_2A}" "sink_0::device=${OPENHD_CAMERA_SUBDEV_DEVICE}" '!' \
+      "video/x-raw,format=NV12,width=${sensor_w},height=${sensor_h},framerate=${sensor_fps}/1" '!')
+    if [[ "${OPENHD_CAMERA_ROTATE_180:-no}" == yes ]]; then
+      pipe+=(tiovxldc sensor-name="$OPENHD_CAMERA_SENSOR_NAME" warp-params="<-4096, 0, 0, -4096, $((sensor_w*8)), $((sensor_h*8))>" '!' video/x-raw,format=NV12 '!')
+    fi
+    out_w=$w; out_h=$h
+    if (( ${OPENHD_CAMERA_SCALE_WIDTH:-0} > 0 && ${OPENHD_CAMERA_SCALE_HEIGHT:-0} > 0 )); then
+      out_w=${OPENHD_CAMERA_SCALE_WIDTH}; out_h=${OPENHD_CAMERA_SCALE_HEIGHT}
+    fi
+    if (( out_w != sensor_w || out_h != sensor_h )); then
+      pipe+=(tiovxmultiscaler target=0 '!' "video/x-raw,format=NV12,width=${out_w},height=${out_h}" '!')
+    fi
+    pipe+=("${queue[@]}" "${enc_system[@]}" '!' video/x-h264,stream-format=byte-stream,alignment=au '!' "${rtp[@]}")
+    run_pipeline "${pipe[@]}"
+    ;;
+  imx708-raw)
+    echo "imx708-raw is a development capture mode and intentionally does not feed OpenHD" >&2
+    exec v4l2-ctl -d "${OPENHD_CAMERA_VIDEO_DEVICE}" --stream-mmap=4 --stream-count=0 --stream-to=/dev/null
+    ;;
+  *) echo "Unsupported OPENHD_CAMERA_MODE=$mode" >&2; exit 2 ;;
+esac

@@ -1,0 +1,32 @@
+# Editors / OS
+*~
+*.swp
+.DS_Store
+
+# Build output
+build/
+out/
+output/
+tmp/
+.cache/
+
+# Compiled artifacts
+*.o
+*.so
+*.ko
+*.a
+
+# Images / archives
+*.img
+*.img.xz
+*.img.zst
+*.tar
+*.tar.gz
+
+# Logs
+*.log
+*.ans
+
+# Local qualification artifacts
+artifacts/
+evidence/

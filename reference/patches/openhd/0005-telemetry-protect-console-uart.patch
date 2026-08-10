@@ -1,0 +1,217 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Fri, 24 Jul 2026 02:00:00 +0000
+Subject: [PATCH 5/5] telemetry: protect the BeagleY-AI console UART
+
+BeagleY-AI uses ttyS2 for the Linux serial console. OpenHD's generic
+"DEFAULT" flight-controller UART fallback also resolves to ttyS2 on an
+otherwise-unrecognized platform, allowing OpenHD and serial-getty to consume
+bytes from the same UART and overwrite each other's termios configuration.
+
+Keep flight-controller UART support, but require an explicit non-console
+serial device on BeagleY-AI. Reject ttyS2 and any active kernel console,
+including aliases that resolve to the same character device.
+---
+diff --git a/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h b/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
+index 3b12966..731cb63 100644
+--- a/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
++++ b/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
+@@ -40,8 +40,14 @@ class SettingsHolder : public openhd::PersistentSettings<Settings> {
+   }
+   [[nodiscard]] Settings create_default() const override {
+     Settings ret{};
+-    // Default telemetry serial (for this platform)
+-    ret.fc_uart_connection_type = "DEFAULT";
++    // ttyS2 is the BeagleY-AI Linux console. Do not claim a default FC UART on
++    // this platform; an explicit safe UART can still be selected later.
++    if (OHDPlatform::instance().is_beagley_ai()) {
++      ret.fc_uart_connection_type = UART_CONNECTION_TYPE_DISABLE;
++    } else {
++      // Default telemetry serial for platforms with a known safe mapping.
++      ret.fc_uart_connection_type = "DEFAULT";
++    }
+     return ret;
+   }
+   std::optional<Settings> impl_deserialize(
+diff --git a/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp b/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
+index 09ab010..85b38c1 100644
+--- a/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
++++ b/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
+@@ -23,6 +23,121 @@
+ #include "openhd_util_filesystem.h"
+ 
+ static std::string GET_ERROR() { return {strerror(errno)}; }
++
++static std::optional<std::string> read_small_text_file(
++    const std::string& filename) {
++  const int fd = open(filename.c_str(), O_RDONLY | O_CLOEXEC);
++  if (fd == -1) {
++    return std::nullopt;
++  }
++  std::string result;
++  char buffer[1024];
++  while (result.size() < 16384) {
++    const auto count = read(fd, buffer, sizeof(buffer));
++    if (count == 0) {
++      break;
++    }
++    if (count < 0) {
++      close(fd);
++      return std::nullopt;
++    }
++    result.append(buffer, static_cast<std::size_t>(count));
++  }
++  close(fd);
++  return result;
++}
++
++static std::string serial_device_basename(const std::string& device) {
++  const auto slash = device.find_last_of('/');
++  return slash == std::string::npos ? device : device.substr(slash + 1);
++}
++
++static bool same_character_device(const std::string& lhs,
++                                  const std::string& rhs) {
++  struct stat lhs_stat {};
++  struct stat rhs_stat {};
++  if (stat(lhs.c_str(), &lhs_stat) != 0 || stat(rhs.c_str(), &rhs_stat) != 0) {
++    return false;
++  }
++  return S_ISCHR(lhs_stat.st_mode) && S_ISCHR(rhs_stat.st_mode) &&
++         lhs_stat.st_rdev == rhs_stat.st_rdev;
++}
++
++static bool console_name_matches_device(const std::string& device,
++                                        std::string console_name) {
++  const auto comma = console_name.find(',');
++  if (comma != std::string::npos) {
++    console_name.resize(comma);
++  }
++  if (console_name.empty()) {
++    return false;
++  }
++  if (serial_device_basename(device) == console_name) {
++    return true;
++  }
++  return same_character_device(device, "/dev/" + console_name);
++}
++
++static bool text_lists_console(const std::string& text,
++                               const std::string& device,
++                               const bool cmdline_format) {
++  std::size_t position = 0;
++  while (position < text.size()) {
++    while (position < text.size() &&
++           (text[position] == ' ' || text[position] == '\t' ||
++            text[position] == '\n' || text[position] == '\r')) {
++      ++position;
++    }
++    const auto begin = position;
++    while (position < text.size() && text[position] != ' ' &&
++           text[position] != '\t' && text[position] != '\n' &&
++           text[position] != '\r') {
++      ++position;
++    }
++    if (begin == position) {
++      continue;
++    }
++    auto token = text.substr(begin, position - begin);
++    if (cmdline_format) {
++      static constexpr auto prefix = "console=";
++      if (token.rfind(prefix, 0) != 0) {
++        continue;
++      }
++      token.erase(0, sizeof("console=") - 1);
++    }
++    if (console_name_matches_device(device, token)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++static bool is_active_kernel_console(const std::string& device) {
++  if (device.empty()) {
++    return false;
++  }
++
++  // The BeagleY-AI debug header is permanently reserved for the serial console
++  // in this image profile. Compare both the configured name and device number
++  // so aliases such as /dev/serial0 cannot bypass the protection.
++  if (OHDPlatform::instance().is_beagley_ai() &&
++      (serial_device_basename(device) == "ttyS2" ||
++       same_character_device(device, "/dev/ttyS2"))) {
++    return true;
++  }
++
++  const auto active_consoles =
++      read_small_text_file("/sys/class/tty/console/active");
++  if (active_consoles.has_value() &&
++      text_lists_console(active_consoles.value(), device, false)) {
++    return true;
++  }
++
++  const auto cmdline = read_small_text_file("/proc/cmdline");
++  return cmdline.has_value() &&
++         text_lists_console(cmdline.value(), device, true);
++}
++
+ static void debug_poll_fd(const struct pollfd& poll_fd) {
+   std::stringstream ss;
+   ss << "Poll:{";
+@@ -37,6 +152,12 @@ int SerialEndpoint::setup_port(const SerialEndpoint::HWOptions& options,
+   if (!m_console) {
+     m_console = openhd::log::get_default();
+   }
++  if (is_active_kernel_console(options.linux_filename)) {
++    m_console->error("Refusing to open protected console UART {}",
++                     options.linux_filename);
++    return -1;
++  }
++
+   // Also see
+   // https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp/
+ 
+@@ -56,22 +177,34 @@ std::optional<std::string> serial_openhd_param_to_linux_fd(
+     // "" means disabled
+     return std::nullopt;
+   }
++  std::optional<std::string> resolved;
+   // Default mapping
+   if (OHDUtil::str_equal(param_name, "DEFAULT")) {
+     const auto platform = OHDPlatform::instance();
+     if (platform.is_rpi()) {
+-      return "/dev/serial0";
++      resolved = "/dev/serial0";
+     } else if (platform.is_x20() || platform.is_rock()) {
+-      return "dev/ttyS2";
++      resolved = "dev/ttyS2";
+     } else if (platform.is_luckfox_pico()) {
+-      return "dev/ttyS3";
++      resolved = "dev/ttyS3";
++    } else if (platform.is_beagley_ai()) {
++      // No implicit FC UART on BeagleY-AI. ttyS2 belongs to the Linux console.
++      return std::nullopt;
+     } else {
+       openhd::log::get_default()->debug(
+           "No default serial mapping for this platform");
+       // fallback
+-      return "dev/ttyS2";
++      resolved = "dev/ttyS2";
+     }
++  } else {
++    // Otherwise, the user can enter any serial FD name.
++    resolved = param_name;
++  }
++
++  if (resolved.has_value() && is_active_kernel_console(resolved.value())) {
++    openhd::log::get_default()->error(
++        "Refusing configured active kernel console UART {}", resolved.value());
++    return std::nullopt;
+   }
+-  // Otherwise, the user can enter any serial FD name
+-  return param_name;
++  return resolved;
+ }
+-- 
+2.47.3

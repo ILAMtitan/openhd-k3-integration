@@ -1,0 +1,47 @@
+From 0ebeee46799e14db69ac07853d9f673899843749 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Tue, 21 Jul 2026 18:58:43 +0000
+Subject: [PATCH] platforms: detect BeagleY-AI AM67A/J722S
+
+---
+ misc/platforms.json | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/misc/platforms.json b/misc/platforms.json
+index 5ad24a4..63f0e44 100644
+--- a/misc/platforms.json
++++ b/misc/platforms.json
+@@ -3,7 +3,8 @@
+     {"key": "X_PLATFORM_TYPE_UVX_MOD", "id": 52, "display": "UVX_MOD"},
+     {"key": "X_PLATFORM_TYPE_QUALCOMM_QRB5165", "id": 46, "display": "QUALCOMM_QRB5165"},
+     {"key": "X_PLATFORM_TYPE_QUALCOMM_QCS405", "id": 47, "display": "QUALCOMM_QCS405"},
+-    {"key": "X_PLATFORM_TYPE_NXP_IMX8", "id": 61, "display": "NXP_IMX8"}
++    {"key": "X_PLATFORM_TYPE_NXP_IMX8", "id": 61, "display": "NXP_IMX8"},
++    {"key": "X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI", "id": 70, "display": "BEAGLEY-AI (AM67A)"}
+   ],
+   "detections": [
+     {
+@@ -13,6 +14,20 @@
+         {"type": "file_regex", "path": "/proc/device-tree/compatible", "pattern": "rockchip,(r[kv][0-9]+)", "case_insensitive": true, "group_equals": "rk3506"}
+       ]
+     },
++    {
++      "platform": "X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI",
++      "log": "Detected BeagleY-AI from device-tree compatible string.",
++      "conditions": [
++        {"type": "file_contains_any", "path": "/proc/device-tree/compatible", "values": ["beagle,am67a-beagley-ai"], "case_insensitive": true}
++      ]
++    },
++    {
++      "platform": "X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI",
++      "log": "Detected BeagleY-AI from device-tree model.",
++      "conditions": [
++        {"type": "file_contains_any", "path": "/proc/device-tree/model", "values": ["BeagleY-AI"], "case_insensitive": true}
++      ]
++    },
+     {
+       "platform": "X_PLATFORM_TYPE_UNKNOWN",
+       "log": "No specific Rockchip match found.",
+-- 
+2.47.3
+

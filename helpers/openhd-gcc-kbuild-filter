@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+real_cc="${OPENHD_REAL_CC:-/usr/bin/gcc}"
+filtered=()
+stripped=0
+for arg in "$@"; do
+  case "$arg" in
+    -fmin-function-alignment=*) stripped=$((stripped + 1)) ;;
+    *) filtered+=("$arg") ;;
+  esac
+done
+if [[ "${OPENHD_CC_FILTER_VERBOSE:-no}" == yes && $stripped -gt 0 ]]; then
+  printf 'openhd-gcc-kbuild-filter: removed %d unsupported alignment flag(s)\n' "$stripped" >&2
+fi
+exec "$real_cc" "${filtered[@]}"

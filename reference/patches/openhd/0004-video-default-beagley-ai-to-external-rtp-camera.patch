@@ -1,0 +1,27 @@
+From 9f0d6ac1a4e4aeb1d67034f3b3f9850f1521b905 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Tue, 21 Jul 2026 22:00:00 +0000
+Subject: [PATCH 4/4] video: default BeagleY-AI to external RTP camera
+
+The TI camera bridge sends H.264/H.265 RTP to the existing OpenHD external
+camera input on localhost port 5500. Select that camera type by default on
+BeagleY-AI while retaining UI configurability.
+---
+ OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+index f16238d..ab08c11 100644
+--- a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
++++ b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+@@ -118,6 +118,8 @@ AirCameraGenericSettings AirCameraGenericSettingsHolder::create_default()
+   } else if (OHDPlatform::instance().platform_type ==
+              X_PLATFORM_TYPE_LUCKFOX_RV110X) {
+     ret.primary_camera_type = X_CAM_TYPE_ROCKCHIP_RV110X;
++  } else if (OHDPlatform::instance().is_beagley_ai()) {
++    ret.primary_camera_type = X_CAM_TYPE_EXTERNAL;
+   }
+
+   return ret;
+-- 
+2.47.3

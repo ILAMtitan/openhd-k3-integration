@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep OpenHD monitor/injection radios out of management networking
+After=systemd-udev-trigger.service
+Before=network-online.target openhd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openhd-radio-network-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

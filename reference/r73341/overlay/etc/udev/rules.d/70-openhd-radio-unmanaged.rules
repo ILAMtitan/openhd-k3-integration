@@ -1,0 +1,3 @@
+# Keep OpenHD RTL8812AU monitor/injection radios outside management networking.
+ACTION=="add|change", SUBSYSTEM=="net", DRIVERS=="rtl88xxau_ohd", ENV{NM_UNMANAGED}="1"
+ACTION=="add|change", SUBSYSTEM=="net", DRIVERS=="88XXau_ohd", ENV{NM_UNMANAGED}="1"

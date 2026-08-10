@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+	echo "Usage: sudo openhd-radio-prepare <wifi-interface>" >&2
+	exit 2
+fi
+iface="$1"
+
+if ! ip link show "${iface}" >/dev/null 2>&1; then
+	echo "No such interface: ${iface}" >&2
+	exit 1
+fi
+
+/usr/local/sbin/openhd-radio-network-guard "${iface}"
+ip link set "${iface}" down
+iw dev "${iface}" set type monitor
+ip link set "${iface}" up
+iw dev "${iface}" info
+
+echo "${iface} is in monitor mode for validation. OpenHD may rename or reconfigure it when started."

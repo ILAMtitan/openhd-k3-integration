@@ -1,0 +1,26 @@
+From 8a8f9c0f9f03ab9b35e811f8743525a3d0d3c113 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Thu, 23 Jul 2026 20:30:00 -0500
+Subject: [PATCH] install: place systemd unit under merged-/usr path
+
+Debian Bookworm uses /lib as a symlink to /usr/lib.  Keeping staged and cached
+payloads under /usr/lib avoids creating a top-level lib directory that can
+replace the merged-/usr symlink during image assembly.
+
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -122,6 +122,6 @@ install(
+ install(
+     FILES ${CMAKE_CURRENT_SOURCE_DIR}/systemd/openhd-sys-utils.service
+-    DESTINATION /lib/systemd/system
++    DESTINATION /usr/lib/systemd/system
+ )
+ 
+ install(
+-- 
+2.47.3

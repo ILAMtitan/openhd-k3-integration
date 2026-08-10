@@ -1,0 +1,34 @@
+From 167c6182871831463b5a5122133a26b6e7891de4 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Tue, 21 Jul 2026 18:57:59 +0000
+Subject: [PATCH 2/4] systemd: order OpenHD after SysUtils and accept role args
+
+---
+ systemd/openhd.service | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/systemd/openhd.service b/systemd/openhd.service
+index 24a40d8..8722847 100644
+--- a/systemd/openhd.service
++++ b/systemd/openhd.service
+@@ -9,12 +9,15 @@
+ 
+ [Unit]
+ Description=OpenHD
+-After=NetworkManager.service
++After=network-online.target openhd-sys-utils.service
++Wants=network-online.target
++Requires=openhd-sys-utils.service
+ 
+ [Service]
+ User=root
+ Environment="LIBCAMERA_LOG_LEVELS=*:ERROR"
+-ExecStart=/usr/local/bin/openhd
++EnvironmentFile=-/etc/default/openhd
++ExecStart=/usr/local/bin/openhd $OPENHD_ARGS
+ Restart=always
+ RestartSec=3
+ 
+-- 
+2.47.3
+

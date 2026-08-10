@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -u
+
+sys=${OPENHD_SYS_CLASS_NET:-/sys/class/net}
+poll=${OPENHD_RADIO_WATCH_POLL_SECONDS:-0.25}
+
+log()
+{
+    printf '%s\n' "$*"
+}
+
+radio_id()
+{
+    local path driver iface ifindex
+
+    for path in "$sys"/*; do
+        [[ -L "$path/device/driver" ]] || continue
+
+        driver=$(basename "$(readlink -f "$path/device/driver")" 2>/dev/null || true)
+        case "$driver" in
+            rtl88xxau_ohd|88XXau_ohd)
+                iface=${path##*/}
+                ifindex=$(cat "$path/ifindex" 2>/dev/null || echo 0)
+                printf '%s:%s\n' "$iface" "$ifindex"
+                return 0
+                ;;
+        esac
+    done
+
+    return 1
+}
+
+state="__INIT__"
+
+while :; do
+    current=$(radio_id || true)
+
+    if [[ "$current" != "$state" ]]; then
+        case "$state:$current" in
+            __INIT__:*)
+                log "Initial RTL8812AU RF state: ${current:-absent}"
+                ;;
+            *:)
+                log "RTL8812AU RF removed (${state}); stopping OpenHD"
+                systemctl stop openhd.service || true
+                ;;
+            :*|*:*)
+                iface=${current%%:*}
+                log "RTL8812AU RF appeared or changed (${state:-absent} -> ${current}); restarting OpenHD"
+                sleep 1
+                if [[ -e "$sys/$iface" ]]; then
+                    systemctl restart openhd.service
+                else
+                    log "RTL8812AU interface $iface vanished before OpenHD restart"
+                fi
+                ;;
+        esac
+
+        state=$current
+    fi
+
+    sleep "$poll"
+done

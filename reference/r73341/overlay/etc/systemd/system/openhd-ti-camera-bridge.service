@@ -1,0 +1,22 @@
+[Unit]
+Description=TI camera and Wave5 RTP bridge for OpenHD
+After=openhd-wave5-prepare.service openhd-ti-remoteproc-prepare.service openhd-imaging-prepare.service network.target
+Before=openhd.service
+Wants=openhd-wave5-prepare.service
+Requires=openhd-ti-remoteproc-prepare.service openhd-imaging-prepare.service
+OnFailure=openhd-diagnostics@camera-bridge-failed.service
+StartLimitIntervalSec=120
+StartLimitBurst=2
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/openhd-ti-camera
+ExecStart=/usr/local/sbin/openhd-persistent-run camera-bridge /usr/local/sbin/openhd-ti-camera-bridge
+Restart=on-failure
+RestartPreventExitStatus=SIGABRT
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=openhd-normal-stack.target

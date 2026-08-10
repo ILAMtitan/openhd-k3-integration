@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Port <porting@example.invalid>
+Date: Thu, 23 Jul 2026 00:30:00 +0000
+Subject: [PATCH 1/4] ohd_common: add BeagleY-AI AM67A platform
+
+Generated from the exact relevant source ordering in OpenHD commit
+f07729b35e273fe3612e1aade030a7a86350d1ac. In particular, preserve the
+QCS405, QRB5165, NXP IMX8 ordering in x_platform_type_to_string().
+---
+ OpenHD/ohd_common/inc/openhd_platform.h   |  6 ++++++
+ OpenHD/ohd_common/src/openhd_platform.cpp | 10 ++++++++++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/OpenHD/ohd_common/inc/openhd_platform.h b/OpenHD/ohd_common/inc/openhd_platform.h
+index 5063109..abb8a1d 100644
+--- a/OpenHD/ohd_common/inc/openhd_platform.h
++++ b/OpenHD/ohd_common/inc/openhd_platform.h
+@@ -5,6 +5,10 @@ static constexpr int X_PLATFORM_TYPE_QUALCOMM_QCS405 = 47;
+ // Numbers 61..65 are reserved for NXP
+ static constexpr int X_PLATFORM_TYPE_NXP_IMX8 = 61;
+ 
++// Numbers 70..79 are reserved for Texas Instruments platforms.
++// BeagleY-AI uses the AM67A/J722S application processor.
++static constexpr int X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI = 70;
++
+ // Numbers 51..60 are reserved for Enterprise Customers
+ static constexpr int X_PLATFORM_TYPE_ORQA = 51;
+ static constexpr int X_PLATFORM_TYPE_UVX_MOD = 52;
+@@ -42,6 +46,8 @@ struct OHDPlatform {
+   bool is_uvx_mod() const;
+   // Luckfox Pico
+   bool is_luckfox_pico() const;
++  // Texas Instruments AM67A/J722S
++  bool is_beagley_ai() const;
+ };
+ 
+ // We need to differentiate between rpi 4 and other pi's to use the right fec
+diff --git a/OpenHD/ohd_common/src/openhd_platform.cpp b/OpenHD/ohd_common/src/openhd_platform.cpp
+index 058b7b5..4357ba0 100644
+--- a/OpenHD/ohd_common/src/openhd_platform.cpp
++++ b/OpenHD/ohd_common/src/openhd_platform.cpp
+@@ -6,6 +6,8 @@
+       return "QUALCOMM_QRB5165";
+     case X_PLATFORM_TYPE_NXP_IMX8:
+       return "NXP_IMX8";
++    case X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI:
++      return "BEAGLEY-AI (AM67A)";
+     default:
+       std::stringstream ss;
+       ss << "ERR-UNDEFINED{" << platform_type << "}";
+@@ -49,6 +51,10 @@ int get_fec_max_block_size_for_platform() {
+     return 50;
+   }
+ 
++  if (platform_type == X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI) {
++    return 30;
++  }
++
+   return 20;
+ }
+ 
+@@ -236,5 +242,9 @@ bool OHDPlatform::is_qrb5165() const {
+ bool OHDPlatform::is_qrb5165() const {
+   return platform_type == X_PLATFORM_TYPE_QUALCOMM_QRB5165;
+ }
+ 
++bool OHDPlatform::is_beagley_ai() const {
++  return platform_type == X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI;
++}
++
+ bool OHDPlatform::is_luckfox_pico() const {
+-- 
+2.47.3

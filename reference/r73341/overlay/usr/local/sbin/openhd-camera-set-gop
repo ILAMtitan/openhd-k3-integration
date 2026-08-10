@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# -eq 1 && "$1" =~ ^[0-9]+$ ]] || { echo "Usage: $0 frames" >&2; exit 2; }
+sed -i "s/^OPENHD_CAMERA_GOP=.*/OPENHD_CAMERA_GOP=$1/" /etc/default/openhd-ti-camera
+systemctl restart openhd-ti-camera-bridge.service
