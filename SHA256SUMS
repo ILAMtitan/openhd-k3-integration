@@ -1,5 +1,6 @@
 f46983e2554cb66579a1c85ad72803476e287567884c5c91ae3d05f6846c8a2f  ./README.md
 90f15fa50e9169dd9c3e1f44c197ba78add92d2642586a01d78abddf620493c3  ./VERSION
+dbe736318d2855cf0160b93c7c98a0ac7aa43c1e45a73765ccefb89cfbbc6ebd  ./adapter/overlay/etc/default/openhd-ti-camera
 dbe736318d2855cf0160b93c7c98a0ac7aa43c1e45a73765ccefb89cfbbc6ebd  ./adapter/overlay/etc/default/openhd-ti-camera.example
 89236ed5c6ba2f2cdd0dd8820732415e473714c8510d6767fdda89733adb72ad  ./adapter/overlay/etc/systemd/system/openhd-ti-camera-bridge.service
 62bc101a244dece6b2546486e80bf12f6bdecde9b27ee639fdb3961afda1b7db  ./adapter/overlay/usr/local/sbin/openhd-ti-camera-bridge
@@ -36,5 +37,5 @@ ebf0e938ab672869b9eb62b19e002a21695b21d200c0be9e13122ee6b3ac7af3  ./reference/r7
 f63426f3c2b795c524e885c2ec54cb7b22e57345ff9715123dfc728f4610ea8e  ./reference/r73341/overlay/usr/local/sbin/openhd-ti-camera-bridge
 9089b37e852029dfbf5f523c955561499b6f9095964bba3679aedad5af6c9076  ./reference/r73341/overlay/usr/local/sbin/openhd-wait-radio-ready
 d036c8fe4dc63ea8b6a3b0b6bd34a3766fb97477063ba4f8080b0585bfe391c4  ./tests/test-boundary.sh
-5739b78fac7d5e346ecd9c56def5a991a118e06118db94a7ff87b982493682a9  ./tests/test-contract.sh
+1a2c688011a8c606f550e84b5d1997393b831d9b872145e96ca65cf7211079b2  ./tests/test-contract.sh
 25642176e747334c3f30790e2075b5797fd833aa51298ac5968c735e60b9d7f0  ./verify-consumer.sh
