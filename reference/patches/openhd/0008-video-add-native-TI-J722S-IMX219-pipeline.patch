@@ -1,0 +1,203 @@
+From 04daf94fff63519f31cda1c5582792f1e52a45f8 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Wed, 12 Aug 2026 09:50:35 -0500
+Subject: [PATCH 8/8] video: add native TI J722S IMX219 pipeline
+
+---
+ OpenHD/ohd_video/inc/camera.hpp               |  3 ++
+ OpenHD/ohd_video/inc/camera_holder.h          |  5 ++
+ OpenHD/ohd_video/inc/gst_helper.hpp           | 52 +++++++++++++++++++
+ OpenHD/ohd_video/misc/camera_registry.json    | 20 +++++++
+ OpenHD/ohd_video/src/gstreamerstream.cpp      | 10 +++-
+ .../src/ohd_video_air_generic_settings.cpp    |  2 +-
+ 6 files changed, 90 insertions(+), 2 deletions(-)
+
+diff --git a/OpenHD/ohd_video/inc/camera.hpp b/OpenHD/ohd_video/inc/camera.hpp
+index fc859e4d..19011ad4 100644
+--- a/OpenHD/ohd_video/inc/camera.hpp
++++ b/OpenHD/ohd_video/inc/camera.hpp
+@@ -93,6 +93,9 @@ struct XCamera {
+     return camera_type >= 130 && camera_type < 140;
+   }
+   bool requires_rockchip_rv_pipeline() const { return camera_type == 140; }
++  bool requires_ti_j722s_pipeline() const {
++    return camera_type >= 150 && camera_type < 160;
++  }
+   std::string cam_type_as_verbose_string() const {
+     return x_cam_type_to_string(camera_type);
+   }
+diff --git a/OpenHD/ohd_video/inc/camera_holder.h b/OpenHD/ohd_video/inc/camera_holder.h
+index 4ec184b0..00aed3a1 100644
+--- a/OpenHD/ohd_video/inc/camera_holder.h
++++ b/OpenHD/ohd_video/inc/camera_holder.h
+@@ -249,6 +249,11 @@ class CameraHolder :
+       // Better choice for the x20
+       ret.h26x_keyframe_interval = 8;
+     }
++    if (m_camera.requires_ti_j722s_pipeline()) {
++      // Native-R1 defaults match the hardware-qualified legacy bridge.
++      ret.h26x_bitrate_kbits = 3000;
++      ret.h26x_keyframe_interval = 15;
++    }
+     return ret;
+   }
+ };
+diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
+index 3af84836..57c4755d 100644
+--- a/OpenHD/ohd_video/inc/gst_helper.hpp
++++ b/OpenHD/ohd_video/inc/gst_helper.hpp
+@@ -935,6 +935,58 @@ static std::string createRecordingForVideoCodec(
+   return ss.str();
+ }
+ 
++static std::string create_ti_j722s_imx219_stream(
++    const CameraSettings& settings) {
++  const int bitrate_bps =
++      openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
++  const int gop =
++      settings.h26x_keyframe_interval > 0 ? settings.h26x_keyframe_interval : 15;
++
++  std::stringstream ss;
++
++  ss << "v4l2src device=/run/ti-k3/camera-video "
++        "io-mode=dmabuf-import do-timestamp=true ! ";
++
++  ss << "video/x-bayer,format=rggb,width=1920,height=1080,"
++        "framerate=30/1 ! ";
++
++  ss << "tiovxisp "
++        "sensor-name=SENSOR_SONY_IMX219_RPI "
++        "dcc-isp-file=/opt/imaging/imx219/linear/"
++        "dcc_viss_1920x1080.bin "
++        "format-msb=7 "
++        "sink_0::pool-size=8 "
++        "src::pool-size=8 "
++        "sink_0::dcc-2a-file=/opt/imaging/imx219/linear/"
++        "dcc_2a_1920x1080.bin "
++        "sink_0::device=/run/ti-k3/camera-subdev ! ";
++
++  ss << "video/x-raw,format=NV12,width=1920,height=1080,"
++        "framerate=30/1 ! ";
++
++  ss << "tiovxmultiscaler target=0 ! ";
++
++  ss << "video/x-raw,format=NV12,width=1280,height=720 ! ";
++
++  ss << "queue max-size-buffers=1 max-size-bytes=0 "
++        "max-size-time=0 leaky=downstream ! ";
++
++  ss << fmt::format(
++      "v4l2h264enc name=ti_wave5_encoder "
++      "extra-controls=\"controls,"
++      "frame_level_rate_control_enable=1,"
++      "video_bitrate={},"
++      "video_gop_size={},"
++      "h264_level=9,"
++      "h264_profile=0,"
++      "prepend_sps_and_pps_to_idr=1\" ! ",
++      bitrate_bps, gop);
++
++  ss << "video/x-h264,stream-format=byte-stream,alignment=au ! ";
++
++  return ss.str();
++}
++
+ static std::string create_input_custom_udp_rtp_port(
+     const CameraSettings& settings) {
+   static constexpr auto input_port = 5500;
+diff --git a/OpenHD/ohd_video/misc/camera_registry.json b/OpenHD/ohd_video/misc/camera_registry.json
+index 173efb7b..7fe75442 100644
+--- a/OpenHD/ohd_video/misc/camera_registry.json
++++ b/OpenHD/ohd_video/misc/camera_registry.json
+@@ -628,6 +628,15 @@
+         {"width": 1280, "height": 720, "fps": 60}
+       ]
+     },
++    {
++      "key": "X_CAM_TYPE_TI_J722S_IMX219",
++      "id": 150,
++      "name": "TI_J722S_IMX219",
++      "ui_label": "IMX219",
++      "resolutions": [
++        {"width": 1280, "height": 720, "fps": 30}
++      ]
++    },
+     {"key": "X_CAM_TYPE_DISABLED", "id": 255, "name": "DISABLED", "ui_label": "DISABLE"}
+   ],
+   "manufacturer_groups": [
+@@ -790,6 +799,13 @@
+         "X_CAM_TYPE_NXP_IMX8_V4L2"
+       ]
+     },
++    {
++      "key": "TI_J722S",
++      "name": "Texas Instruments",
++      "cameras": [
++        "X_CAM_TYPE_TI_J722S_IMX219"
++      ]
++    },
+     {
+       "key": "LUCKFOX",
+       "name": "LUCKFOX",
+@@ -851,6 +867,10 @@
+       "platform": "X_PLATFORM_TYPE_NXP_IMX8",
+       "manufacturers": ["NXP", "USB", "DEBUG"]
+     },
++    {
++      "platform": "X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI",
++      "manufacturers": ["TI_J722S", "USB", "DEBUG"]
++    },
+     {
+       "platform": "X_PLATFORM_TYPE_LUCKFOX_RV110X",
+       "manufacturers": ["LUCKFOX"]
+diff --git a/OpenHD/ohd_video/src/gstreamerstream.cpp b/OpenHD/ohd_video/src/gstreamerstream.cpp
+index 94ee6635..f6927ebf 100644
+--- a/OpenHD/ohd_video/src/gstreamerstream.cpp
++++ b/OpenHD/ohd_video/src/gstreamerstream.cpp
+@@ -191,6 +191,10 @@ std::string GStreamerStream::create_source_encode_pipeline(
+     openhd::log::get_default()->debug(
+         "Camera requires NXP i.MX8 V4L2 pipeline.");
+     pipeline << OHDGstHelper::create_nxp_imx8_v4l2_stream(setting);
++  } else if (camera.requires_ti_j722s_pipeline()) {
++    openhd::log::get_default()->debug(
++        "Camera requires TI J722S native pipeline.");
++    pipeline << OHDGstHelper::create_ti_j722s_imx219_stream(setting);
+   } else if (is_usb_camera(camera.camera_type)) {
+     openhd::log::get_default()->warn("Detected USB camera.");
+     const auto v4l2_device_name =
+@@ -269,7 +273,8 @@ void GStreamerStream::setup() {
+     /*pipeline_content << "video/x-h264,stream-format=byte-stream ! ";
+     pipeline_content << OHDGstHelper::createOutputAppSink();*/
+   } else {
+-    const int rtp_fragment_size = 1440;
++    const int rtp_fragment_size =
++        camera.requires_ti_j722s_pipeline() ? 1024 : 1440;
+     m_console->debug("Using {} for rtp fragmentation", rtp_fragment_size);
+     pipeline_content << OHDGstHelper::create_parse_and_rtp_packetize(
+         setting.streamed_video_format.videoCodec, rtp_fragment_size);
+@@ -403,6 +408,9 @@ void GStreamerStream::request_restart() { m_request_restart = true; }
+ 
+ void GStreamerStream::handle_change_bitrate_request(
+     openhd::LinkActionHandler::LinkBitrateInformation lb) {
++  if (m_camera_holder->get_camera().requires_ti_j722s_pipeline()) {
++    return;
++  }
+   // m_console->debug("handle_change_bitrate_request prev: {} new:{}",
+   //                  kbits_per_second_to_string(m_curr_dynamic_bitrate_kbits),
+   //                  kbits_per_second_to_string(lb.recommended_encoder_bitrate_kbits));
+diff --git a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+index ec48a3ce..cc03991b 100644
+--- a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
++++ b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+@@ -117,7 +117,7 @@ AirCameraGenericSettings AirCameraGenericSettingsHolder::create_default()
+              X_PLATFORM_TYPE_LUCKFOX_RV110X) {
+     ret.primary_camera_type = X_CAM_TYPE_ROCKCHIP_RV110X;
+   } else if (OHDPlatform::instance().is_beagley_ai()) {
+-    ret.primary_camera_type = X_CAM_TYPE_EXTERNAL;
++    ret.primary_camera_type = X_CAM_TYPE_TI_J722S_IMX219;
+   }
+ 
+   return ret;
+-- 
+2.53.0
+

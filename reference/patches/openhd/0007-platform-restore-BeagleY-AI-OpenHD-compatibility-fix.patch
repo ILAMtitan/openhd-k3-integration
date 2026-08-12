@@ -1,0 +1,81 @@
+From c41e9282cbd89fa0802f25f1bd187cef371c42e8 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Wed, 12 Aug 2026 09:29:31 -0500
+Subject: [PATCH 7/8] platform: restore BeagleY-AI OpenHD compatibility fixes
+
+---
+ OpenHD/ohd_interface/inc/wifi_card.h               |  2 ++
+ OpenHD/ohd_interface/src/wifi_command_helper.cpp   | 11 +++++++++--
+ OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp |  1 +
+ OpenHD/ohd_video/src/validate_settings.cpp         |  1 +
+ 4 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/OpenHD/ohd_interface/inc/wifi_card.h b/OpenHD/ohd_interface/inc/wifi_card.h
+index 67ed4cb8..3e8bff25 100644
+--- a/OpenHD/ohd_interface/inc/wifi_card.h
++++ b/OpenHD/ohd_interface/inc/wifi_card.h
+@@ -188,6 +188,7 @@ struct WiFiCard {
+   // proper driver)
+   [[nodiscard]] bool supports_openhd_wifibroadcast() const {
+     return type == WiFiCardType::OPENHD_RTL_88X2AU ||
++           type == WiFiCardType::RTL_88X2AU ||
+            type == WiFiCardType::OPENHD_RTL_88X2BU ||
+            type == WiFiCardType::OPENHD_RTL_88X2CU ||
+            type == WiFiCardType::OPENHD_RTL_88X2EU ||
+@@ -218,6 +219,7 @@ struct WiFiCard {
+ static bool wifi_card_supports_variable_mcs(const WiFiCard& wifi_card) {
+   if (wifi_card.type == WiFiCardType::OPENHD_EMULATED) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2AU) return true;
++  if (wifi_card.type == WiFiCardType::RTL_88X2AU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2BU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2CU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2EU) return true;
+diff --git a/OpenHD/ohd_interface/src/wifi_command_helper.cpp b/OpenHD/ohd_interface/src/wifi_command_helper.cpp
+index 80d6d5e9..efbdd894 100644
+--- a/OpenHD/ohd_interface/src/wifi_command_helper.cpp
++++ b/OpenHD/ohd_interface/src/wifi_command_helper.cpp
+@@ -237,8 +237,15 @@ static std::string float_without_trailing_zeroes(const float value) {
+ // detection) Example not supported freq : 5885 MHz [177] (disabled)
+ static bool iw_info_line_contains_freq_and_is_supported(
+     const std::string &line, const uint32_t freq_mhz) {
+-  return OHDUtil::contains(line, fmt::format("{} MHz", freq_mhz)) &&
+-         !OHDUtil::contains(line, "disabled");
++  // iw versions and drivers differ in whether they print frequencies as
++  // "5745 MHz" or "5745.0 MHz". Accept both forms.
++  const auto integer_form = fmt::format("{} MHz", freq_mhz);
++  const auto decimal_form = fmt::format("{}.0 MHz", freq_mhz);
++  const bool frequency_matches =
++      OHDUtil::contains(line, integer_form) ||
++      OHDUtil::contains(line, decimal_form);
++
++  return frequency_matches && !OHDUtil::contains(line, "disabled");
+ }
+ static bool iw_info_supports_frequency(const std::vector<std::string> &lines,
+                                        const uint32_t freq_mhz) {
+diff --git a/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp b/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
+index a75dd21a..f2860838 100644
+--- a/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
++++ b/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
+@@ -24,6 +24,7 @@
+ #ifndef OPENHD_OPENHD_OHD_TELEMETRY_SRC_ROUTING_MAVLINKSYSTEM_H_
+ #define OPENHD_OPENHD_OHD_TELEMETRY_SRC_ROUTING_MAVLINKSYSTEM_H_
+ 
++#include <cstdint>
+ #include <map>
+ #include <memory>
+ #include <vector>
+diff --git a/OpenHD/ohd_video/src/validate_settings.cpp b/OpenHD/ohd_video/src/validate_settings.cpp
+index 4877e1aa..35680110 100644
+--- a/OpenHD/ohd_video/src/validate_settings.cpp
++++ b/OpenHD/ohd_video/src/validate_settings.cpp
+@@ -24,6 +24,7 @@
+ #include "validate_settings.h"
+ 
+ #include <regex>
++#include <sstream>
+ 
+ #include "openhd_spdlog.h"
+ #include "openhd_spdlog_include.h"
+-- 
+2.53.0
+
