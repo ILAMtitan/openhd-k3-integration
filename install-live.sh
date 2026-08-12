@@ -34,7 +34,9 @@ done
 [[ "$role" == air || "$role" == ground ]] || usage
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || usage
 
+INTEGRATION_VERSION=$(<"$root/VERSION")
 OPENHD_COMMIT=f07729b35e273fe3612e1aade030a7a86350d1ac
+OPENHD_PATCHED_TREE=01fe7bf68d39ca6d9be747668910c841a11abe17
 SYSUTILS_COMMIT=aaf534d6d55f187d552837e0127ffdb6ba026e5b
 RTL_COMMIT=28dee4c7d30dc4bc713bd259cbd88d8f44de89b7
 CC33_COMMIT=0b4f850d6c0fd8e0fe0ae1d3e80ac6733aced29b
@@ -81,7 +83,7 @@ apt-get install -y --no-install-recommends \
   v4l-utils iw rfkill wireless-regdb wpasupplicant usbutils i2c-tools nmap \
   bc libelf-dev jq ethtool tcpdump kmod util-linux
 
-say 'Installing OpenHD application-side adapters'
+say 'Installing OpenHD application-side adapters and legacy rollback bridge'
 install -d -m 0755 /usr/local/sbin /etc/default /etc/systemd/system /etc/systemd/system/openhd.service.d \
   /etc/NetworkManager/conf.d /etc/systemd/network /etc/udev/rules.d /usr/local/share/OpenHD/SysUtils \
   /var/lib/openhd-k3 /boot/openhd
@@ -114,9 +116,11 @@ git clone --recursive --branch 2.7-evo https://github.com/OpenHD/OpenHD.git "$bu
 git -C "$buildroot/OpenHD" checkout --detach "$OPENHD_COMMIT"
 git -C "$buildroot/OpenHD" submodule update --init --recursive
 for p in "$root"/reference/patches/openhd/*.patch; do
-  git -C "$buildroot/OpenHD" apply --check "$p"
-  git -C "$buildroot/OpenHD" apply "$p"
+  git -C "$buildroot/OpenHD" apply --index --check "$p"
+  git -C "$buildroot/OpenHD" apply --index "$p"
 done
+patched_tree=$(git -C "$buildroot/OpenHD" write-tree)
+[[ "$patched_tree" == "$OPENHD_PATCHED_TREE" ]] || die "OpenHD patched tree mismatch: expected $OPENHD_PATCHED_TREE, got $patched_tree"
 cmake -S "$buildroot/OpenHD/OpenHD" -B "$buildroot/openhd-build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DENABLE_AIR=ON -DENABLE_USB_CAMERAS=ON
@@ -227,18 +231,22 @@ else
   echo 'Skipped RTL8812AU by request.'
 fi
 
-say 'Installing application systemd boundary'
+say 'Installing Native-R1 application systemd boundary'
 cat >/etc/systemd/system/openhd.service.d/20-ti-k3-consumer.conf <<'EOF_DROPIN'
 [Unit]
-After=ti-k3-accelerators.target openhd-ti-camera-bridge.service openhd-radio-network-guard.service
-Wants=openhd-ti-camera-bridge.service openhd-radio-network-guard.service
+After=ti-k3-accelerators.target ti-k3-imx219-prepare.service openhd-radio-network-guard.service
+Requires=ti-k3-accelerators.target ti-k3-imx219-prepare.service
+Wants=openhd-radio-network-guard.service
+
+[Service]
+EnvironmentFile=-/etc/ti-k3/gstreamer.env
 EOF_DROPIN
 cat >/etc/systemd/system/openhd-k3-consumer.target <<'EOF_TARGET'
 [Unit]
-Description=OpenHD consumer of TI K3 accelerator platform
+Description=OpenHD Native-R1 consumer of TI K3 accelerator platform
 Requires=ti-k3-accelerators.target
 After=ti-k3-accelerators.target
-Wants=openhd-sys-utils.service openhd-radio-network-guard.service openhd-radio-watch.service openhd-ti-camera-bridge.service openhd.service
+Wants=openhd-sys-utils.service openhd-radio-network-guard.service openhd-radio-watch.service openhd.service
 
 [Install]
 WantedBy=multi-user.target
@@ -250,8 +258,10 @@ systemctl disable openhd-k3-consumer.target 2>/dev/null || true
 systemctl stop openhd.service openhd-ti-camera-bridge.service openhd-radio-watch.service 2>/dev/null || true
 
 cat >/var/lib/openhd-k3/consumer.env <<EOF_META
-format=1
+format=2
+integration_version=$INTEGRATION_VERSION
 openhd_commit=$OPENHD_COMMIT
+openhd_patched_tree=$OPENHD_PATCHED_TREE
 sysutils_commit=$SYSUTILS_COMMIT
 rtl8812au_commit=$RTL_COMMIT
 cc33xx_version=$CC33_VERSION
@@ -259,18 +269,30 @@ role=$role
 kernel=$KVER
 platform_dependency=ti-k3-accelerators.target
 camera_contract=/run/ti-k3/camera.env
+camera_mode=native-ti-j722s-imx219
+legacy_bridge=installed-inactive
 EOF_META
 
-say 'Consumer boundary verification'
+say 'Native-R1 consumer boundary verification'
 test -x /usr/local/bin/openhd
 test -x /usr/local/bin/openhd_sys_utils
+test -r /etc/ti-k3/gstreamer.env
+test -r /run/ti-k3/camera.env
+test -e /run/ti-k3/camera-video
+test -e /run/ti-k3/camera-subdev
+
+# Legacy bridge remains installed only as a rollback/reference artifact.
 test -x /usr/local/sbin/openhd-ti-camera-bridge
-systemd-analyze verify /etc/systemd/system/openhd-ti-camera-bridge.service /etc/systemd/system/openhd-k3-consumer.target >/dev/null
+
+systemd-analyze verify /etc/systemd/system/openhd.service /etc/systemd/system/openhd-ti-camera-bridge.service /etc/systemd/system/openhd-k3-consumer.target >/dev/null
+
 echo
-echo 'OpenHD consumer layer installed but NOT activated.'
+echo 'OpenHD Native-R1 consumer layer installed but NOT activated.'
+echo 'The legacy camera bridge is installed for rollback/reference only and remains inactive.'
 echo 'Next qualification steps:'
-echo '  systemctl start openhd-ti-camera-bridge.service'
-echo '  tcpdump -ni lo udp port 5500 -c 10'
-echo '  systemctl start openhd-sys-utils.service openhd-radio-network-guard.service'
-echo '  systemctl start openhd.service'
-echo 'After RF qualification: systemctl enable --now openhd-k3-consumer.target'
+echo '  systemctl start openhd-k3-consumer.target'
+echo '  ./verify-consumer.sh'
+echo '  verify physical RF video'
+echo 'After physical RF qualification:'
+echo '  systemctl enable openhd-k3-consumer.target'
+echo '  perform a full physical cold power cycle; do not warm-restart remoteprocs'
