@@ -28,9 +28,6 @@ check_cmd 'ti-k3-accelerators.target active' systemctl is-active --quiet ti-k3-a
 check_cmd 'TI K3 RPMsg contract ready' ti-k3-rpmsg-ready
 check_cmd 'TI K3 self-test passes' ti-k3-self-test
 check_cmd '/etc/ti-k3/gstreamer.env readable' test -r /etc/ti-k3/gstreamer.env
-check_cmd '/run/ti-k3/camera.env readable' test -r /run/ti-k3/camera.env
-check_cmd '/run/ti-k3/camera-video present' test -e /run/ti-k3/camera-video
-check_cmd '/run/ti-k3/camera-subdev present' test -e /run/ti-k3/camera-subdev
 check_cmd 'OpenHD executable present' test -x /usr/local/bin/openhd
 check_cmd 'OpenHD SysUtils executable present' test -x /usr/local/bin/openhd_sys_utils
 check_cmd 'openhd-k3-consumer.target active' systemctl is-active --quiet openhd-k3-consumer.target
@@ -93,6 +90,10 @@ if [[ -n "$openhd_pid" && "$role" != unknown ]]; then
 fi
 
 if [[ "$role" == air ]]; then
+  check_cmd '/run/ti-k3/camera.env readable' test -r /run/ti-k3/camera.env
+  check_cmd '/run/ti-k3/camera-video present' test -e /run/ti-k3/camera-video
+  check_cmd '/run/ti-k3/camera-subdev present' test -e /run/ti-k3/camera-subdev
+
   generic=/usr/local/share/openhd/video/air_camera_generic.json
 
   if [[ -r "$generic" ]] && jq -e '.primary_camera_type == 150' "$generic" >/dev/null 2>&1; then
@@ -120,7 +121,5 @@ if [[ "$role" == air ]]; then
     fail_msg "OpenHD owns TI camera device $camera_dev"
   fi
 fi
-
-echo 'PASS: TI remoteproc/firmware ownership remains delegated to ti-k3-accelerators APIs; this verifier performs no remoteproc state writes.'
 
 exit "$fail"
