@@ -21,17 +21,21 @@ grep -Fq 'ret.h26x_bitrate_kbits = 3000;' "$patch8"
 grep -Fq 'ret.h26x_keyframe_interval = 15;' "$patch8"
 grep -Fq 'camera.requires_ti_j722s_pipeline() ? 1024 : 1440;' "$patch8"
 
-# The normal OpenHD service consumes the TI platform directly. The legacy
-# localhost camera bridge must not be part of the active dependency graph.
+# Air consumes the TI camera service directly. The legacy localhost camera
+# bridge must not be part of the active dependency graph.
 dropin=$(sed -n "/20-ti-k3-consumer.conf <<'EOF_DROPIN'/,/^EOF_DROPIN$/p" "$installer")
 target=$(sed -n "/openhd-k3-consumer.target <<'EOF_TARGET'/,/^EOF_TARGET$/p" "$installer")
 
 grep -Fq 'After=ti-k3-accelerators.target ti-k3-imx219-prepare.service openhd-radio-network-guard.service' <<<"$dropin"
 grep -Fq 'Requires=ti-k3-accelerators.target ti-k3-imx219-prepare.service' <<<"$dropin"
-grep -Fq 'Wants=openhd-radio-network-guard.service' <<<"$dropin"
 grep -Fq 'EnvironmentFile=-/etc/ti-k3/gstreamer.env' <<<"$dropin"
 ! grep -Fq 'openhd-ti-camera-bridge.service' <<<"$dropin"
-! grep -Fq 'ExecStart=' <<<"$dropin"
+
+# Ground consumes the accelerator baseline without requiring local camera
+# preparation or a /run/ti-k3 camera contract.
+grep -Fq 'After=ti-k3-accelerators.target openhd-radio-network-guard.service' "$installer"
+grep -Fq 'camera_contract=none' "$installer"
+grep -Fq 'camera_mode=none' "$installer"
 
 grep -Fq 'Requires=ti-k3-accelerators.target' <<<"$target"
 grep -Fq 'Wants=openhd-sys-utils.service openhd-radio-network-guard.service openhd-radio-watch.service openhd.service' <<<"$target"
@@ -41,4 +45,4 @@ grep -Fq 'Wants=openhd-sys-utils.service openhd-radio-network-guard.service open
 grep -Fq 'USER_MODULE_NAME=88XXau modules' "$installer"
 ! grep -Fq 'USER_MODULE_NAME=88XXau_ohd modules' "$installer"
 
-echo 'PASS: Native-R1 source, camera, systemd, and RF naming contract'
+echo 'PASS: Native-R1 source, role, camera, systemd, and RF naming contract'
