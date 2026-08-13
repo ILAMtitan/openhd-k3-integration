@@ -160,7 +160,7 @@ systemctl status openhd-radio-watch.service --no-pager
 sudo ./verify-consumer.sh
 ```
 
-The verifier checks, among other things:
+The verifier checks the deployed behavior that matters:
 
 - TI accelerator target still active
 - RPMsg and TI self-test still pass
@@ -168,7 +168,7 @@ The verifier checks, among other things:
 - OpenHD and SysUtils are running
 - the legacy camera bridge remains inactive
 - there is no UDP listener on `127.0.0.1:5500`
-- the OpenHD binary contains the Native-R1 J722S pipeline
+- the OpenHD process has the selected air/ground role
 - the OpenHD process inherited the private TI GStreamer runtime
 - the configured air camera type is the Native-R1 J722S camera
 - on an air unit, OpenHD owns the TI camera capture device
@@ -300,8 +300,12 @@ Before publishing changes:
 ```bash
 bash tests/test-boundary.sh
 bash tests/test-contract.sh
-sha256sum -c SHA256SUMS
 ```
+
+These tests protect the TI/OpenHD ownership boundary and the actual Native-R1
+consumer contract. Git provides integrity/versioning for ordinary repository
+files, so the repository does not maintain a second whole-tree checksum
+manifest.
 
 For the detailed qualification procedure, see:
 
