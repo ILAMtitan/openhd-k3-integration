@@ -172,7 +172,6 @@ The verifier checks the deployed behavior that matters:
 - TI accelerator target still active
 - RPMsg and TI self-test still pass
 - OpenHD and SysUtils are running
-- the legacy camera bridge remains inactive
 - there is no UDP listener on `127.0.0.1:5500`
 - the OpenHD process has the selected air/ground role
 - the OpenHD process inherited the private TI GStreamer runtime
@@ -248,22 +247,6 @@ This repository owns the consumer/application layer:
 - management-WiFi integration
 - telemetry UART policy
 
-## Legacy bridge
-
-These files remain for rollback/reference:
-
-```text
-adapter/overlay/usr/local/sbin/openhd-ti-camera-bridge
-adapter/overlay/etc/systemd/system/openhd-ti-camera-bridge.service
-```
-
-They are **not** part of the normal Native-R1 topology. Qualification requires
-the bridge service to remain inactive and requires no UDP listener on
-`127.0.0.1:5500`.
-
-`continue-after-rtl-name-failure.sh` is retained only for the historical
-interrupted RTL8812AU naming-failure case.
-
 ## Troubleshooting
 
 Start with the TI platform before debugging OpenHD:
@@ -299,7 +282,6 @@ restarting remote processors from OpenHD.
 - `reference/patches/openhd/` - frozen OpenHD Native-R1 patch stack
 - `reference/patches/openhd-sysutils/` - BeagleY-AI SysUtils integration
 - `reference/r73341/` - retained RF/system integration reference material
-- `adapter/` - application-side adapter and legacy rollback bridge
 - `helpers/` - build helpers
 - `docs/` - dependency and Native-R1 qualification documentation
 - `install-live.sh` - install the consumer layer on a qualified board

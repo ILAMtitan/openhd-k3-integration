@@ -70,9 +70,6 @@ OpenHD integration must not write remoteproc state, choose firmware aliases,
 encode TI memory-map addresses, enforce TI firmware hashes, create carveouts,
 or build/install the TIOVX platform runtime.
 
-## Legacy bridge boundary
+## Transport boundary
 
-`openhd-ti-camera-bridge` remains shipped only as rollback/reference material.
-
-The Native-R1 `openhd.service` dependency graph must not Want or Require it,
-and `openhd-k3-consumer.target` must not pull it into the normal boot path.
+Native-R1 does not use or ship a localhost camera bridge. The native path feeds the TI-accelerated H.264 stream directly into OpenHD, and consumer verification requires no UDP listener on `127.0.0.1:5500`.

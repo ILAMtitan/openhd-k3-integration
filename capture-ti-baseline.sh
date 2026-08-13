@@ -2,7 +2,10 @@
 set -Eeuo pipefail
 [[ $(id -u) -eq 0 ]] || { echo 'Run as root on the BeagleY-AI' >&2; exit 1; }
 out=${1:-/root/ti-k3-standalone-qualified}
-rm -rf "$out"
+if [[ -e "$out" || -e "$out.tar.gz" || -e "$out.tar.gz.sha256" ]]; then
+  echo "Refusing to overwrite existing evidence output: $out" >&2
+  exit 1
+fi
 mkdir -p "$out"
 {
   echo '=== date ==='; date -Is
@@ -16,8 +19,14 @@ mkdir -p "$out"
   echo '=== rpmsg ==='; ti-k3-rpmsg-ready
   echo '=== info ==='; ti-k3-info
   echo '=== self-test ==='; ti-k3-self-test; echo "SELF_TEST_RC=$?"
-  echo '=== camera contract ==='; cat /run/ti-k3/camera.env
-  echo '=== camera service ==='; systemctl status ti-k3-imx219-prepare.service --no-pager --full
+  echo '=== camera contract ==='
+  if [[ -r /run/ti-k3/camera.env ]]; then
+    cat /run/ti-k3/camera.env
+  else
+    echo 'camera contract not present'
+  fi
+  echo '=== camera service ==='
+  systemctl status ti-k3-imx219-prepare.service --no-pager --full || true
   echo '=== OpenHD absence ===';
   if command -v openhd >/dev/null 2>&1; then echo 'FAIL: openhd executable present'; else echo 'PASS: no openhd executable'; fi
 } >"$out/summary.txt" 2>&1

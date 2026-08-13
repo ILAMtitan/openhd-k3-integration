@@ -85,13 +85,10 @@ apt-get install -y --no-install-recommends \
   v4l-utils iw rfkill wireless-regdb wpasupplicant usbutils i2c-tools nmap \
   bc libelf-dev jq ethtool tcpdump kmod util-linux
 
-say 'Installing OpenHD application-side adapters and legacy rollback bridge'
+say 'Installing OpenHD application integration'
 install -d -m 0755 /usr/local/sbin /etc/default /etc/systemd/system /etc/systemd/system/openhd.service.d \
   /etc/NetworkManager/conf.d /etc/systemd/network /etc/udev/rules.d /usr/local/share/OpenHD/SysUtils \
   /var/lib/openhd-k3 /boot/openhd
-install -m 0755 "$root/adapter/overlay/usr/local/sbin/openhd-ti-camera-bridge" /usr/local/sbin/
-install -m 0644 "$root/adapter/overlay/etc/systemd/system/openhd-ti-camera-bridge.service" /etc/systemd/system/
-install -m 0644 "$root/adapter/overlay/etc/default/openhd-ti-camera.example" /etc/default/openhd-ti-camera
 
 for s in openhd-fc-uart-setup openhd-find-management-wifi openhd-management-wifi-setup \
          openhd-radio-network-guard openhd-radio-prepare openhd-radio-watch openhd-wait-radio-ready; do
@@ -270,7 +267,7 @@ systemctl disable systemd-networkd-wait-online.service 2>/dev/null || true
 systemctl daemon-reload
 # Deliberately do not enable/start the target during qualification.
 systemctl disable openhd-k3-consumer.target 2>/dev/null || true
-systemctl stop openhd.service openhd-ti-camera-bridge.service openhd-radio-watch.service 2>/dev/null || true
+systemctl stop openhd.service openhd-radio-watch.service 2>/dev/null || true
 
 camera_contract=none
 camera_mode=none
@@ -292,7 +289,6 @@ kernel=$KVER
 platform_dependency=ti-k3-accelerators.target
 camera_contract=$camera_contract
 camera_mode=$camera_mode
-legacy_bridge=installed-inactive
 EOF_META
 
 say 'Native-R1 consumer boundary verification'
@@ -305,14 +301,10 @@ if [[ "$role" == air ]]; then
   test -e /run/ti-k3/camera-subdev
 fi
 
-# Legacy bridge remains installed only as a rollback/reference artifact.
-test -x /usr/local/sbin/openhd-ti-camera-bridge
-
-systemd-analyze verify /etc/systemd/system/openhd.service /etc/systemd/system/openhd-ti-camera-bridge.service /etc/systemd/system/openhd-k3-consumer.target >/dev/null
+systemd-analyze verify /etc/systemd/system/openhd.service /etc/systemd/system/openhd-k3-consumer.target >/dev/null
 
 echo
 echo 'OpenHD Native-R1 consumer layer installed but NOT activated.'
-echo 'The legacy camera bridge is installed for rollback/reference only and remains inactive.'
 echo 'Next qualification steps:'
 echo '  systemctl start openhd-k3-consumer.target'
 echo '  ./verify-consumer.sh'
