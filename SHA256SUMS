@@ -32,7 +32,7 @@ f44a593c91e3611b5c32dbf8295ece51ed37901206fd25b2a0d513261cba6c0f  reference/r733
 cc902d5202d6ba118c2dd095a62c6ddd043c1f9516b7dbf976836dd76462b1f1  reference/r73341/overlay/usr/local/sbin/openhd-camera-set-gop
 de91a25dc9fda8fc358fc8866aacd914143a79b6f4d8fc21f949b6b3bd80097c  reference/r73341/overlay/usr/local/sbin/openhd-fc-uart-setup
 3f7472596f76e1120f9d6fab5086b023ff2f9df2c242b3f4730371b5d0a36d97  reference/r73341/overlay/usr/local/sbin/openhd-find-management-wifi
-5f92c2f27fa2a787e176de82c70f4ac108c57  reference/r73341/overlay/usr/local/sbin/openhd-management-wifi-setup
+5f92c2f27fa2a787e176de82f47c72a72538abef9d1a3990662f70f4ac108c57  reference/r73341/overlay/usr/local/sbin/openhd-management-wifi-setup
 ebf0e938ab672869b9eb62b19e002a21695b21d200c0be9e13122ee6b3ac7af3  reference/r73341/overlay/usr/local/sbin/openhd-radio-network-guard
 8ccc1162897d78ef6053542b720158127e050fbb5679053f197042852aea5784  reference/r73341/overlay/usr/local/sbin/openhd-radio-prepare
 491640c0339ffe6b7f35c54746471e5a4234fea1ac58b696e40249f14fec266a  reference/r73341/overlay/usr/local/sbin/openhd-radio-watch
