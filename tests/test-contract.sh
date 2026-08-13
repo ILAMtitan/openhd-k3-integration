@@ -20,13 +20,15 @@ grep -Fq 'ret.h26x_bitrate_kbits = 3000;' "$patch8"
 grep -Fq 'ret.h26x_keyframe_interval = 15;' "$patch8"
 grep -Fq 'camera.requires_ti_j722s_pipeline() ? 1024 : 1440;' "$patch8"
 
-# Air consumes the TI camera service directly.
+# Air consumes the TI camera service directly. The historical localhost bridge
+# must not be part of the active service dependency graph.
 dropin=$(sed -n "/20-ti-k3-consumer.conf <<'EOF_DROPIN'/,/^EOF_DROPIN$/p" "$installer")
 target=$(sed -n "/openhd-k3-consumer.target <<'EOF_TARGET'/,/^EOF_TARGET$/p" "$installer")
 
 grep -Fq 'After=ti-k3-accelerators.target ti-k3-imx219-prepare.service openhd-radio-network-guard.service' <<<"$dropin"
 grep -Fq 'Requires=ti-k3-accelerators.target ti-k3-imx219-prepare.service' <<<"$dropin"
 grep -Fq 'EnvironmentFile=-/etc/ti-k3/gstreamer.env' <<<"$dropin"
+! grep -Fq 'openhd-ti-camera-bridge.service' <<<"$dropin"
 
 # Ground consumes the accelerator baseline without requiring local camera
 # preparation or a /run/ti-k3 camera contract.
@@ -36,9 +38,7 @@ grep -Fq 'camera_mode=none' "$installer"
 
 grep -Fq 'Requires=ti-k3-accelerators.target' <<<"$target"
 grep -Fq 'Wants=openhd-sys-utils.service openhd-radio-network-guard.service openhd-radio-watch.service openhd.service' <<<"$target"
-
-# The retired localhost bridge must not be reintroduced by the installer.
-! grep -Fq 'openhd-ti-camera-bridge' "$installer"
+! grep -Fq 'openhd-ti-camera-bridge.service' <<<"$target"
 
 # Preserve the RF module name expected by OpenHD/system integration.
 grep -Fq 'USER_MODULE_NAME=88XXau modules' "$installer"
