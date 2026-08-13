@@ -53,8 +53,10 @@ command -v ti-k3-self-test >/dev/null || die 'ti-k3-accelerators is not installe
 systemctl is-active --quiet ti-k3-accelerators.target || die 'ti-k3-accelerators.target is not active'
 ti-k3-rpmsg-ready >/dev/null || die 'TI K3 RPMsg contract is not ready'
 ti-k3-self-test || die 'TI K3 self-test failed; refusing to layer OpenHD over an unqualified platform'
-systemctl start ti-k3-imx219-prepare.service
-[[ -r /run/ti-k3/camera.env ]] || die 'TI K3 camera contract is unavailable'
+if [[ "$role" == air ]]; then
+  systemctl start ti-k3-imx219-prepare.service
+  [[ -r /run/ti-k3/camera.env ]] || die 'TI K3 camera contract is unavailable'
+fi
 if command -v openhd >/dev/null 2>&1; then
   die 'OpenHD is already installed. Use a clean TI-only baseline for this qualification.'
 fi
@@ -232,7 +234,8 @@ else
 fi
 
 say 'Installing Native-R1 application systemd boundary'
-cat >/etc/systemd/system/openhd.service.d/20-ti-k3-consumer.conf <<'EOF_DROPIN'
+if [[ "$role" == air ]]; then
+  cat >/etc/systemd/system/openhd.service.d/20-ti-k3-consumer.conf <<'EOF_DROPIN'
 [Unit]
 After=ti-k3-accelerators.target ti-k3-imx219-prepare.service openhd-radio-network-guard.service
 Requires=ti-k3-accelerators.target ti-k3-imx219-prepare.service
@@ -241,6 +244,18 @@ Wants=openhd-radio-network-guard.service
 [Service]
 EnvironmentFile=-/etc/ti-k3/gstreamer.env
 EOF_DROPIN
+else
+  cat >/etc/systemd/system/openhd.service.d/20-ti-k3-consumer.conf <<'EOF_DROPIN'
+[Unit]
+After=ti-k3-accelerators.target openhd-radio-network-guard.service
+Requires=ti-k3-accelerators.target
+Wants=openhd-radio-network-guard.service
+
+[Service]
+EnvironmentFile=-/etc/ti-k3/gstreamer.env
+EOF_DROPIN
+fi
+
 cat >/etc/systemd/system/openhd-k3-consumer.target <<'EOF_TARGET'
 [Unit]
 Description=OpenHD Native-R1 consumer of TI K3 accelerator platform
@@ -257,6 +272,13 @@ systemctl daemon-reload
 systemctl disable openhd-k3-consumer.target 2>/dev/null || true
 systemctl stop openhd.service openhd-ti-camera-bridge.service openhd-radio-watch.service 2>/dev/null || true
 
+camera_contract=none
+camera_mode=none
+if [[ "$role" == air ]]; then
+  camera_contract=/run/ti-k3/camera.env
+  camera_mode=native-ti-j722s-imx219
+fi
+
 cat >/var/lib/openhd-k3/consumer.env <<EOF_META
 format=2
 integration_version=$INTEGRATION_VERSION
@@ -268,8 +290,8 @@ cc33xx_version=$CC33_VERSION
 role=$role
 kernel=$KVER
 platform_dependency=ti-k3-accelerators.target
-camera_contract=/run/ti-k3/camera.env
-camera_mode=native-ti-j722s-imx219
+camera_contract=$camera_contract
+camera_mode=$camera_mode
 legacy_bridge=installed-inactive
 EOF_META
 
@@ -277,9 +299,11 @@ say 'Native-R1 consumer boundary verification'
 test -x /usr/local/bin/openhd
 test -x /usr/local/bin/openhd_sys_utils
 test -r /etc/ti-k3/gstreamer.env
-test -r /run/ti-k3/camera.env
-test -e /run/ti-k3/camera-video
-test -e /run/ti-k3/camera-subdev
+if [[ "$role" == air ]]; then
+  test -r /run/ti-k3/camera.env
+  test -e /run/ti-k3/camera-video
+  test -e /run/ti-k3/camera-subdev
+fi
 
 # Legacy bridge remains installed only as a rollback/reference artifact.
 test -x /usr/local/sbin/openhd-ti-camera-bridge
