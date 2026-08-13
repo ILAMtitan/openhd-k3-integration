@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+SYS_CLASS_NET="${OPENHD_SYS_CLASS_NET:-/sys/class/net}"
+timeout="${1:-${OPENHD_RF_READY_TIMEOUT_SECONDS:-45}}"
+poll="${OPENHD_RF_READY_POLL_SECONDS:-1}"
+[[ "${timeout}" =~ ^[0-9]+$ ]] || timeout=45
+
+deadline=$((SECONDS + timeout))
+while :; do
+    rtl_seen=no
+    rtl_pending=no
+    for iface_path in "${SYS_CLASS_NET}"/wl*; do
+        [[ -e "${iface_path}" ]] || continue
+        iface=${iface_path##*/}
+        driver=$(basename "$(readlink -f "${iface_path}/device/driver" 2>/dev/null || true)")
+        if [[ "${driver}" != rtl88xxau_ohd && "${driver}" != 88XXau_ohd ]]; then
+            driver=$(ethtool -i "${iface}" 2>/dev/null | awk '/^driver:/ {print $2; exit}')
+        fi
+        [[ "${driver}" == rtl88xxau_ohd || "${driver}" == 88XXau_ohd ]] || continue
+        rtl_seen=yes
+        type=$(iw dev "${iface}" info 2>/dev/null | awk '/type/ {print $2; exit}')
+        [[ "${type}" == monitor ]] || rtl_pending=yes
+    done
+
+    [[ "${rtl_seen}" == no || "${rtl_pending}" == no ]] && exit 0
+    (( SECONDS >= deadline )) && exit 1
+    sleep "${poll}"
+done

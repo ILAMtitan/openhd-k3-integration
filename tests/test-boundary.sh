@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 if grep -RniE '/sys/class/remoteproc|vision_apps_evm|j722s-main-r5f0_0-fw|214ee24d51bd8f|fcfd8a387e93fb23|23d2c02c0eba51b|0xA5000000|0xC0000000' \
   "$root/install-live.sh" \
   "$root/verify-consumer.sh" \
-  "$root/reference/r73341/overlay/usr/local/sbin"; then
+  "$root/overlay/usr/local/sbin"; then
   echo 'OpenHD boundary violation' >&2
   exit 1
 fi

@@ -1,0 +1,9 @@
+[Unit]
+Description=Protect OpenHD RF interface %I from management networking
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+Before=openhd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openhd-radio-network-guard %I

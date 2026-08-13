@@ -92,14 +92,14 @@ install -d -m 0755 /usr/local/sbin /etc/default /etc/systemd/system /etc/systemd
 
 for s in openhd-fc-uart-setup openhd-find-management-wifi openhd-management-wifi-setup \
          openhd-radio-network-guard openhd-radio-prepare openhd-radio-watch openhd-wait-radio-ready; do
-  install -m 0755 "$root/reference/r73341/overlay/usr/local/sbin/$s" /usr/local/sbin/
+  install -m 0755 "$root/overlay/usr/local/sbin/$s" /usr/local/sbin/
 done
 for u in openhd-radio-network-guard.service openhd-radio-network-guard@.service openhd-radio-watch.service; do
-  install -m 0644 "$root/reference/r73341/overlay/etc/systemd/system/$u" /etc/systemd/system/
+  install -m 0644 "$root/overlay/etc/systemd/system/$u" /etc/systemd/system/
 done
-install -m 0644 "$root/reference/r73341/overlay/etc/NetworkManager/conf.d/90-openhd-radios-unmanaged.conf" /etc/NetworkManager/conf.d/
-install -m 0644 "$root/reference/r73341/overlay/etc/systemd/network/05-openhd-radio-unmanaged.network" /etc/systemd/network/
-install -m 0644 "$root/reference/r73341/overlay/etc/udev/rules.d/70-openhd-radio-unmanaged.rules" /etc/udev/rules.d/
+install -m 0644 "$root/overlay/etc/NetworkManager/conf.d/90-openhd-radios-unmanaged.conf" /etc/NetworkManager/conf.d/
+install -m 0644 "$root/overlay/etc/systemd/network/05-openhd-radio-unmanaged.network" /etc/systemd/network/
+install -m 0644 "$root/overlay/etc/udev/rules.d/70-openhd-radio-unmanaged.rules" /etc/udev/rules.d/
 
 cat >/etc/default/openhd <<EOF_ROLE
 OPENHD_ARGS=--$role
@@ -114,7 +114,7 @@ mkdir -p "$buildroot"
 git clone --recursive --branch 2.7-evo https://github.com/OpenHD/OpenHD.git "$buildroot/OpenHD"
 git -C "$buildroot/OpenHD" checkout --detach "$OPENHD_COMMIT"
 git -C "$buildroot/OpenHD" submodule update --init --recursive
-for p in "$root"/reference/patches/openhd/*.patch; do
+for p in "$root"/patches/openhd/*.patch; do
   git -C "$buildroot/OpenHD" apply --index --check "$p"
   git -C "$buildroot/OpenHD" apply --index "$p"
 done
@@ -132,7 +132,7 @@ rsync -a --keep-dirlinks "$buildroot/openhd-stage/" /
 say 'Building pinned OpenHD SysUtils'
 git clone --branch main https://github.com/OpenHD/OpenHD-SysUtils.git "$buildroot/OpenHD-SysUtils"
 git -C "$buildroot/OpenHD-SysUtils" checkout --detach "$SYSUTILS_COMMIT"
-for p in "$root"/reference/patches/openhd-sysutils/*.patch; do
+for p in "$root"/patches/openhd-sysutils/*.patch; do
   git -C "$buildroot/OpenHD-SysUtils" apply --check "$p"
   git -C "$buildroot/OpenHD-SysUtils" apply "$p"
 done

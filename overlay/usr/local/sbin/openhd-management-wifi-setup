@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+	cat <<'USAGE'
+Usage:
+  openhd-management-wifi-setup
+  openhd-management-wifi-setup --ssid SSID [--password PASSWORD] [--country US]
+  openhd-management-wifi-setup --status
+  openhd-management-wifi-setup --reset
+
+Configures only the onboard TI CC33xx management radio through Netplan.
+USB OpenHD monitor/injection radios are never selected.
+USAGE
+}
+
+find_cc33xx_iface() {
+	local iface driver
+	for iface in /sys/class/net/wl*; do
+		[[ -e "${iface}" ]] || continue
+		iface=${iface##*/}
+		driver=$(basename "$(readlink -f "/sys/class/net/${iface}/device/driver" 2>/dev/null || true)")
+		case "${driver}" in
+			cc33xx|cc33xx_sdio) printf '%s\n' "${iface}"; return 0;;
+		esac
+		if readlink -f "/sys/class/net/${iface}/device" 2>/dev/null | grep -q '/mmc'; then
+			printf '%s\n' "${iface}"; return 0
+		fi
+	done
+	return 1
+}
+
+mode=setup
+ssid=""
+password=""
+country="US"
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--ssid) ssid=${2:?}; shift 2;;
+		--password) password=${2:?}; shift 2;;
+		--country) country=${2:?}; shift 2;;
+		--status) mode=status; shift;;
+		--reset) mode=reset; shift;;
+		-h|--help) usage; exit 0;;
+		*) usage >&2; exit 2;;
+	esac
+done
+
+iface=$(find_cc33xx_iface) || {
+	echo "No onboard CC33xx wireless interface found." >&2
+	echo "Check: modinfo cc33xx_sdio; journalctl -k -b | grep -Ei 'cc33|mmc2|firmware'" >&2
+	exit 1
+}
+config=/etc/netplan/30-cc33xx-management.yaml
+
+if [[ "${mode}" == status ]]; then
+	echo "Interface: ${iface}"
+	networkctl status "${iface}" --no-pager || true
+	iw dev "${iface}" link || true
+	exit 0
+fi
+
+if [[ "${mode}" == reset ]]; then
+	rm -f "${config}"
+	netplan generate
+	netplan apply
+	echo "Removed ${config}"
+	exit 0
+fi
+
+if [[ -z "${ssid}" ]]; then
+	read -r -p 'Wi-Fi SSID: ' ssid
+fi
+if [[ -z "${password}" ]]; then
+	read -r -s -p 'Wi-Fi password: ' password
+	echo
+fi
+[[ -n "${ssid}" ]] || { echo "SSID cannot be empty" >&2; exit 1; }
+
+SSID=${ssid} PASSWORD=${password} COUNTRY=${country} IFACE=${iface} python3 - <<'PY' >"${config}.tmp"
+import json, os
+iface=os.environ['IFACE']; ssid=os.environ['SSID']; password=os.environ['PASSWORD']; country=os.environ['COUNTRY']
+# JSON quoting is valid YAML quoting and safely handles punctuation.
+print('network:')
+print('  version: 2')
+print('  renderer: networkd')
+print('  wifis:')
+print(f'    {iface}:')
+print('      optional: true')
+print('      dhcp4: true')
+print(f'      regulatory-domain: {json.dumps(country)}')
+print('      access-points:')
+print(f'        {json.dumps(ssid)}:')
+print(f'          password: {json.dumps(password)}')
+PY
+install -m 0600 "${config}.tmp" "${config}"
+rm -f "${config}.tmp"
+netplan generate
+netplan apply
+sleep 3
+
+echo "Configured ${iface} for management Wi-Fi."
+ip -br address show "${iface}" || true
+iw dev "${iface}" link || true

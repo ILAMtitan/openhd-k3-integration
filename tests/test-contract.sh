@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 installer="$root/install-live.sh"
-patch8="$root/reference/patches/openhd/0008-video-add-native-TI-J722S-IMX219-pipeline.patch"
+patch8="$root/patches/openhd/0008-video-add-native-TI-J722S-IMX219-pipeline.patch"
 
 # The installer reconstructs the known Native-R1 tree from the pinned
 # upstream source. The resulting Git tree is the source-identity invariant.

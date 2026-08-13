@@ -1,0 +1,5 @@
+[Match]
+Driver=rtl88xxau_ohd 88XXau_ohd
+
+[Link]
+Unmanaged=yes

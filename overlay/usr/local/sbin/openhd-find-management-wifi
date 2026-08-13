@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+SYS_CLASS_NET="${OPENHD_SYS_CLASS_NET:-/sys/class/net}"
+WAIT_SECONDS="${OPENHD_MANAGEMENT_WIFI_WAIT_SECONDS:-30}"
+[[ "${WAIT_SECONDS}" =~ ^[0-9]+$ ]] || WAIT_SECONDS=30
+
+find_cc33xx_iface() {
+    local iface_path iface driver device
+    for iface_path in "${SYS_CLASS_NET}"/wl*; do
+        [[ -e "${iface_path}" ]] || continue
+        iface=${iface_path##*/}
+        driver=$(basename "$(readlink -f "${iface_path}/device/driver" 2>/dev/null || true)")
+        device=$(readlink -f "${iface_path}/device" 2>/dev/null || true)
+
+        # Never return an OpenHD monitor/injection radio, even if the generic
+        # userspace networking stack happens to enumerate it first.
+        case "${driver}" in
+            rtl88xxau_ohd|88XXau_ohd) continue ;;
+        esac
+
+        if [[ "${driver}" == cc33xx || "${driver}" == cc33xx_sdio ]] || \
+           [[ "${device}" == *'/mmc'* ]]; then
+            printf '%s\n' "${iface}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+for ((elapsed=0; elapsed<=WAIT_SECONDS; elapsed++)); do
+    if find_cc33xx_iface; then
+        exit 0
+    fi
+    (( elapsed == WAIT_SECONDS )) && break
+    sleep 1
+done
+
+exit 1

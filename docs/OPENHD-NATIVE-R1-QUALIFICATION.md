@@ -6,7 +6,7 @@ Qualification date: 2026-08-12
 
 - Upstream repository: OpenHD/OpenHD
 - Upstream commit: `f07729b35e273fe3612e1aade030a7a86350d1ac`
-- Integration patch stack: `reference/patches/openhd/0001` through `0008`
+- Integration patch stack: `patches/openhd/0001` through `0008`
 
 ## Patch reconstruction proof
 

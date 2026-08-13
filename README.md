@@ -14,7 +14,7 @@ bring-up**.
 The OpenHD patch stack is:
 
 ```text
-reference/patches/openhd/0001..0008
+patches/openhd/0001..0008
 ```
 
 It is based on upstream OpenHD commit:
@@ -279,9 +279,10 @@ restarting remote processors from OpenHD.
 
 ## Repository layout
 
-- `reference/patches/openhd/` - frozen OpenHD Native-R1 patch stack
-- `reference/patches/openhd-sysutils/` - BeagleY-AI SysUtils integration
-- `reference/r73341/` - retained RF/system integration reference material
+- `patches/openhd/` - active OpenHD Native-R1 patch stack
+- `patches/openhd-sysutils/` - active BeagleY-AI SysUtils integration
+- `overlay/` - active RF, management-WiFi, UART, udev, and systemd integration
+- `reference/r73341/` - historical R7.33.4.1 snapshot; not consumed by the installer
 - `helpers/` - build helpers
 - `docs/` - dependency and Native-R1 qualification documentation
 - `install-live.sh` - install the consumer layer on a qualified board
