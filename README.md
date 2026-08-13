@@ -43,20 +43,27 @@ The current qualified TI baseline uses:
 
 - BeagleY-AI / J722S / AM67A
 - 4 GiB memory profile
-- IMX219 on **CSI0**
+- IMX219 on **CSI0** for the air-unit camera path
 - qualified TI R2 remote firmware
 - working RPMsg, TIOVX ISP, multiscaler, and Wave5 H.264
-- `/run/ti-k3/camera.env` published by the TI platform
 
-Before installing OpenHD, these should pass:
+For both air and ground roles, the TI platform baseline should pass:
 
 ```bash
 systemctl is-active ti-k3-accelerators.target
 sudo ti-k3-rpmsg-ready
 sudo ti-k3-self-test
+```
+
+For an air unit, the camera contract is additionally required:
+
+```bash
 sudo systemctl start ti-k3-imx219-prepare.service
 test -r /run/ti-k3/camera.env
 ```
+
+A ground unit does not require a local IMX219 camera or `/run/ti-k3/camera-*`
+contract.
 
 Do not install this layer over an unknown or partially modified TI platform if
 you are trying to reproduce the qualified configuration.
@@ -126,7 +133,7 @@ sudo ./install-live.sh --role ground
 The installer performs a TI-platform preflight, reconstructs OpenHD and SysUtils
 from pinned revisions, installs the application/radio integration, and leaves
 `openhd-k3-consumer.target` **stopped and disabled** so it can be verified
-manually first.
+manually first. Camera preparation is performed only for the air role.
 
 Optional development switches:
 
@@ -164,15 +171,14 @@ The verifier checks the deployed behavior that matters:
 
 - TI accelerator target still active
 - RPMsg and TI self-test still pass
-- TI camera contract is present
 - OpenHD and SysUtils are running
 - the legacy camera bridge remains inactive
 - there is no UDP listener on `127.0.0.1:5500`
 - the OpenHD process has the selected air/ground role
 - the OpenHD process inherited the private TI GStreamer runtime
-- the configured air camera type is the Native-R1 J722S camera
-- on an air unit, OpenHD owns the TI camera capture device
-- remoteproc/firmware ownership remains with `ti-k3-accelerators`
+- for air: the TI camera contract is present
+- for air: the configured camera type is the Native-R1 J722S camera
+- for air: OpenHD owns the TI camera capture device
 
 ### 5. Verify physical RF video
 
@@ -200,21 +206,24 @@ Install with:
 sudo ./install-live.sh --role ground
 ```
 
-The same consumer target and verification tooling are used, but the ground role
-does not require ownership of the local IMX219 capture device.
+The ground role uses the qualified TI platform baseline but does not require a
+local IMX219 camera, camera preparation service, or camera-device ownership.
 
 The selected role is recorded by the installer and passed to OpenHD as
 `--air` or `--ground`.
 
 ## Required TI platform API
 
-OpenHD consumes these interfaces from `ti-k3-accelerators`:
+OpenHD consumes these interfaces from `ti-k3-accelerators` on both roles:
 
 - `ti-k3-accelerators.target`
 - `ti-k3-rpmsg-ready`
 - `ti-k3-self-test`
-- `ti-k3-imx219-prepare.service`
 - `/etc/ti-k3/gstreamer.env`
+
+The air role additionally consumes:
+
+- `ti-k3-imx219-prepare.service`
 - `/run/ti-k3/camera.env`
 - `/run/ti-k3/camera-video`
 - `/run/ti-k3/camera-subdev`
@@ -230,7 +239,7 @@ provisioning.
 
 This repository owns the consumer/application layer:
 
-- OpenHD application camera lifecycle
+- OpenHD application camera lifecycle on the air unit
 - output resolution
 - H.264 bitrate and GOP policy
 - H.264 parse and RTP packetization
@@ -264,6 +273,11 @@ systemctl --failed --no-pager
 systemctl status ti-k3-accelerators.target --no-pager
 sudo ti-k3-rpmsg-ready
 sudo ti-k3-self-test
+```
+
+For an air unit, also inspect:
+
+```bash
 systemctl status ti-k3-imx219-prepare.service --no-pager
 cat /run/ti-k3/camera.env
 ```
