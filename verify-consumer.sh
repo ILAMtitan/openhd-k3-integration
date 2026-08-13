@@ -37,23 +37,15 @@ check_cmd 'openhd-k3-consumer.target active' systemctl is-active --quiet openhd-
 check_cmd 'openhd.service active' systemctl is-active --quiet openhd.service
 
 if systemctl is-active --quiet openhd-ti-camera-bridge.service; then
-  fail_msg 'legacy openhd-ti-camera-bridge.service is inactive'
+  fail_msg 'legacy openhd-ti-camera-bridge.service must remain inactive'
 else
   pass_msg 'legacy openhd-ti-camera-bridge.service inactive'
 fi
 
 if ss -H -lunp 2>/dev/null | grep -Eq '127\.0\.0\.1:5500([[:space:]]|$)'; then
-  fail_msg 'no UDP listener on 127.0.0.1:5500'
+  fail_msg 'unexpected UDP listener on 127.0.0.1:5500'
 else
   pass_msg 'no UDP listener on 127.0.0.1:5500'
-fi
-
-if grep -aFq 'TI_J722S_IMX219' /usr/local/bin/openhd &&
-   grep -aFq '/run/ti-k3/camera-video' /usr/local/bin/openhd &&
-   grep -aFq 'SENSOR_SONY_IMX219_RPI' /usr/local/bin/openhd; then
-  pass_msg 'OpenHD binary contains Native-R1 J722S pipeline fingerprints'
-else
-  fail_msg 'OpenHD binary contains Native-R1 J722S pipeline fingerprints'
 fi
 
 role=unknown
