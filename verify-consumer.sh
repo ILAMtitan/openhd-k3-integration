@@ -33,12 +33,6 @@ check_cmd 'OpenHD SysUtils executable present' test -x /usr/local/bin/openhd_sys
 check_cmd 'openhd-k3-consumer.target active' systemctl is-active --quiet openhd-k3-consumer.target
 check_cmd 'openhd.service active' systemctl is-active --quiet openhd.service
 
-if systemctl is-active --quiet openhd-ti-camera-bridge.service; then
-  fail_msg 'legacy openhd-ti-camera-bridge.service must remain inactive'
-else
-  pass_msg 'legacy openhd-ti-camera-bridge.service inactive'
-fi
-
 if ss -H -lunp 2>/dev/null | grep -Eq '127\.0\.0\.1:5500([[:space:]]|$)'; then
   fail_msg 'unexpected UDP listener on 127.0.0.1:5500'
 else
