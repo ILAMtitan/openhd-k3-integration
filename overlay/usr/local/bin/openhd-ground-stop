@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -u
+
+if pkexec /usr/local/sbin/openhd-ground-control stop; then
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --info --title="OpenHD Ground Station" \
+            --text="OpenHD ground consumer services are stopped. The TI K3 accelerator platform remains running."
+    fi
+else
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="OpenHD Ground Station" \
+            --text="OpenHD ground consumer services could not be stopped."
+    fi
+    exit 1
+fi

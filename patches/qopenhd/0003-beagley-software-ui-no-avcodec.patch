@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Ground Port <porting@example.invalid>
+Date: Wed, 5 Aug 2026 21:50:00 -0500
+Subject: [PATCH] beagley: stable Xorg software UI mode without AVCodec KMS
+
+The AM67A target cannot create the GLX or XCB/EGL context expected by the
+AVCodec/QSG renderer while XFCE owns the display. Compile that renderer out,
+expose an environment-backed primary-video gate to QML, and use an opaque
+background while the validated UI-only mode is active. The GStreamer sources
+remain built for later Wave5 renderer integration.
+---
+ QOpenHD.pro  | 13 -------------
+ app/main.cpp |  5 +++++
+ qml/main.qml |  6 +++++-
+ 3 files changed, 10 insertions(+), 14 deletions(-)
+
+diff --git a/QOpenHD.pro b/QOpenHD.pro
+--- a/QOpenHD.pro
++++ b/QOpenHD.pro
+@@ -119,11 +119,3 @@ LinuxBuild {
+-    # Avcodec decode and display, all sources
+-    # Replaced gstreamer for now
+-    # Comment the line below to build without avcodec (you won't have any video decoding capabilities in this case though)
+-    # However, this can be usefully for figuring out compiler issue(s) on different platform(s)
+-    # NOTE: QT Creator is quite bad at figuring out changes here, you might need a "full" rebuild or manualy delete
+-    # the build dir/cache, then rebuild
+-    include(app/videostreaming/avcodec/avcodec_video.pri)
+-
+     # Gstreamer / qmlglsink decode and display, all sources
+     # r.n only used for secondary video and for primary video only on platforms we cannot do primary video via QSG / avcodec
+     include(app/videostreaming/gstreamer/gst_video.pri)
+@@ -133,6 +125,1 @@ LinuxBuild {
+-    SOURCES += \
+-        app/videostreaming/avcodec/drm_kms/kms_renderer.cpp
+-
+-    HEADERS += \
+-        app/videostreaming/avcodec/drm_kms/kms_renderer.h
+ }
+
+diff --git a/app/main.cpp b/app/main.cpp
+--- a/app/main.cpp
++++ b/app/main.cpp
+@@ -170,3 +170,8 @@ static void write_platform_context_properties(QQmlApplicationEngine& engine){
++    const QByteArray disable_primary_video=qgetenv("QOPENHD_DISABLE_PRIMARY_VIDEO");
++    engine.rootContext()->setContextProperty(
++        "QOPENHD_DISABLE_PRIMARY_VIDEO",
++        QVariant(!disable_primary_video.isEmpty() && disable_primary_video!="0"));
++
+ #if defined(__android__)
+     engine.rootContext()->setContextProperty("IsAndroid", QVariant(true));
+ #else
+diff --git a/qml/main.qml b/qml/main.qml
+--- a/qml/main.qml
++++ b/qml/main.qml
+@@ -43,4 +43,5 @@ ApplicationWindow {
+     //color: "transparent" //Consti10 transparent background
+     //color : "#2C3E50" // reduce KREBS
+-    color: settings.app_background_transparent ? "transparent" : "#2C3E50"
++    color: QOPENHD_DISABLE_PRIMARY_VIDEO ? "#2C3E50" :
++        (settings.app_background_transparent ? "transparent" : "#2C3E50")
+     //flags: Qt.WindowStaysOnTopHint| Qt.FramelessWindowHint| Qt.X11BypassWindowManagerHint;
+@@ -79,7 +80,10 @@ ApplicationWindow {
+         // primary video is always full-screen and behind the HUD OSD Elements
+         Loader {
+             anchors.fill: parent
+             z: 1.0
+             source: {
++                if(QOPENHD_DISABLE_PRIMARY_VIDEO){
++                    return ""
++                }
+                 if(QOPENHD_ENABLE_VIDEO_VIA_ANDROID){
+                     return "../video/ExpMainVideoAndroid.qml"
+                 }

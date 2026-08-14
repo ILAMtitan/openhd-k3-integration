@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Stop OpenHD Ground
+Comment=Stop the OpenHD receiver backend
+Exec=/usr/local/bin/openhd-ground-stop
+Icon=process-stop
+Terminal=false
+Categories=AudioVideo;Network;
+StartupNotify=false

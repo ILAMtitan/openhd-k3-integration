@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -u
+
+[ ! -r /etc/default/openhd-ground-ui ] || . /etc/default/openhd-ground-ui
+
+qopenhd=""
+for candidate in /usr/local/bin/QOpenHD /usr/bin/QOpenHD /usr/bin/qopenhd; do
+    [ -x "$candidate" ] || continue
+    qopenhd="$candidate"
+    break
+done
+
+show_error()
+{
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="OpenHD Ground Station" --text="$1"
+    else
+        echo "$1" >&2
+    fi
+}
+
+if [ -z "$qopenhd" ]; then
+    show_error "QOpenHD is not installed. Run verify-consumer.sh from a terminal."
+    exit 1
+fi
+
+if ! systemctl is-active --quiet openhd-k3-consumer.target; then
+    if ! pkexec /usr/local/sbin/openhd-ground-control start; then
+        show_error "The OpenHD ground consumer did not start. Check the RF adapter and TI K3 platform health."
+        exit 1
+    fi
+fi
+
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export QT_QPA_PLATFORM=xcb
+
+case "${OPENHD_QOPENHD_RENDER_MODE:-software-x11}" in
+    software-x11)
+        unset QT_XCB_GL_INTEGRATION
+        unset QT_OPENGL
+        export QT_QUICK_BACKEND=software
+        export QSG_RENDER_LOOP=basic
+        ;;
+    *)
+        show_error "Unsupported QOpenHD render mode: ${OPENHD_QOPENHD_RENDER_MODE:-unset}"
+        exit 2
+        ;;
+esac
+
+if [ "${OPENHD_QOPENHD_DISABLE_PRIMARY_VIDEO:-yes}" = yes ]; then
+    export QOPENHD_DISABLE_PRIMARY_VIDEO=1
+fi
+if [ "${OPENHD_QOPENHD_FULLSCREEN:-yes}" = yes ]; then
+    export QOPENHD_START_FULLSCREEN=1
+fi
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/openhd-ground"
+mkdir -p "$state_dir"
+log_file="$state_dir/qopenhd.log"
+
+"$qopenhd" >>"$log_file" 2>&1
+status=$?
+
+if [ "${OPENHD_STOP_WITH_QOPENHD:-no}" = yes ]; then
+    pkexec /usr/local/sbin/openhd-ground-control stop >/dev/null 2>&1 || true
+fi
+
+if [ "$status" -ne 0 ]; then
+    show_error "QOpenHD exited with status $status. Log: $log_file"
+fi
+exit "$status"

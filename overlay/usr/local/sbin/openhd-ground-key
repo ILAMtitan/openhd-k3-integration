@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -eu
+
+KEY=/usr/local/share/openhd/txrx.key
+
+usage()
+{
+    echo "Usage: openhd-ground-key status|generate|import FILE|export FILE" >&2
+    exit 2
+}
+
+require_root()
+{
+    [ "$(id -u)" -eq 0 ] || {
+        echo "This command must run as root." >&2
+        exit 1
+    }
+}
+
+install_key()
+{
+    source_file="$1"
+    [ -f "$source_file" ] || {
+        echo "Key file not found: $source_file" >&2
+        exit 1
+    }
+    size="$(stat -c '%s' "$source_file")"
+    [ "$size" -eq 128 ] || {
+        echo "OpenHD key must be exactly 128 bytes; got $size." >&2
+        exit 1
+    }
+    install -d -m 0755 "$(dirname "$KEY")"
+    install -m 0600 "$source_file" "$KEY"
+}
+
+case "${1:-}" in
+    status)
+        if [ ! -f "$KEY" ]; then
+            echo "missing: $KEY"
+            exit 1
+        fi
+        stat -c 'path=%n size=%s mode=%a owner=%U:%G' "$KEY"
+        sha256sum "$KEY"
+        ;;
+    generate)
+        require_root
+        tmp="$(mktemp)"
+        trap 'rm -f "$tmp"' EXIT
+        head -c 128 /dev/urandom > "$tmp"
+        install_key "$tmp"
+        echo "Generated a new OpenHD link key. Copy this same key to the air unit."
+        sha256sum "$KEY"
+        ;;
+    import)
+        require_root
+        [ "$#" -eq 2 ] || usage
+        install_key "$2"
+        echo "Imported OpenHD link key."
+        sha256sum "$KEY"
+        ;;
+    export)
+        require_root
+        [ "$#" -eq 2 ] || usage
+        [ -f "$KEY" ] || {
+            echo "Ground key is missing: $KEY" >&2
+            exit 1
+        }
+        install -m 0600 "$KEY" "$2"
+        echo "Exported key to $2"
+        sha256sum "$2"
+        ;;
+    *)
+        usage
+        ;;
+esac

@@ -1,0 +1,13 @@
+polkit.addRule(function(action, subject) {
+    var packagedControl =
+        action.id == "com.axiom.openhd-ground.control" ||
+        (action.id == "org.freedesktop.policykit.exec" &&
+         action.lookup("program") == "/usr/local/sbin/openhd-ground-control");
+
+    if (packagedControl &&
+        subject.local &&
+        subject.active &&
+        subject.isInGroup("sudo")) {
+        return polkit.Result.YES;
+    }
+});

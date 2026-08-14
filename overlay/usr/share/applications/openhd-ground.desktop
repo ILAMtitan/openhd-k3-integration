@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenHD Ground Station
+Comment=Start the OpenHD receiver and open QOpenHD
+Exec=/usr/local/bin/openhd-ground-launch
+Icon=applications-multimedia
+Terminal=false
+Categories=AudioVideo;Network;
+StartupNotify=true

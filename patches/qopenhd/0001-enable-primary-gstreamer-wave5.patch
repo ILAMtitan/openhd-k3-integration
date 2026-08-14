@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenHD BeagleY-AI Ground Port <porting@example.invalid>
+Date: Wed, 5 Aug 2026 12:30:00 -0500
+Subject: [PATCH] video: enable primary GStreamer and prefer V4L2 codecs
+
+Use QOpenHD's GStreamer/QML path for both primary and secondary streams.
+When QOPENHD_PREFER_V4L2_DECODER is set and the corresponding factory is
+available, select the BeagleY-AI Wave5 V4L2 decoder explicitly. Otherwise
+retain upstream decodebin/software fallback behavior.
+---
+ app/videostreaming/gstreamer/gst_video.pri          |  2 +-
+ app/videostreaming/gstreamer/gstqmlglsinkstream.cpp | 49 ++++++++++++++++++++++++++++++++---------
+ 2 files changed, 40 insertions(+), 10 deletions(-)
+
+diff --git a/app/videostreaming/gstreamer/gst_video.pri b/app/videostreaming/gstreamer/gst_video.pri
+--- a/app/videostreaming/gstreamer/gst_video.pri
++++ b/app/videostreaming/gstreamer/gst_video.pri
+@@ -99,6 +99,6 @@ android{
+ }else {
+     message(gst linux)
+     DEFINES += QOPENHD_ENABLE_GSTREAMER_QMLGLSINK
+-    #DEFINES += QOPENHD_GSTREAMER_PRIMARY_VIDEO
++    DEFINES += QOPENHD_GSTREAMER_PRIMARY_VIDEO
+     DEFINES += QOPENHD_GSTREAMER_SECONDARY_VIDEO
+ 
+     SOURCES += \
+diff --git a/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp b/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
+--- a/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
++++ b/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
+@@ -2,5 +2,6 @@
+ 
+ #include <QtQuick>
++#include <cstdlib>
+ #include <sstream>
+ 
+ #include "gst_helper.hpp"
+@@ -55,9 +56,32 @@ static std::string gst_create_jeston_test(const QOpenHDVideoHelper::VideoCodec&
+    return ss.str();
+ }
+ 
++static bool gst_factory_exists(const char* name){
++    GstElementFactory* factory=gst_element_factory_find(name);
++    if(factory==nullptr){
++        return false;
++    }
++    gst_object_unref(factory);
++    return true;
++}
++
+ static std::string gst_create_video_decoder(const QOpenHDVideoHelper::VideoCodec& videoCodec,bool force_sw){
+    qDebug()<<"gst_create_video_decoder force_sw:"<<force_sw;
+     if(force_sw){
+         return gst_create_always_software_decoder(videoCodec);
+     }
++    const char* prefer_v4l2_env=std::getenv("QOPENHD_PREFER_V4L2_DECODER");
++    const bool prefer_v4l2=prefer_v4l2_env!=nullptr &&
++        std::string(prefer_v4l2_env)!="" &&
++        std::string(prefer_v4l2_env)!="0";
++    if(prefer_v4l2 && videoCodec==QOpenHDVideoHelper::VideoCodecH264 &&
++       gst_factory_exists("v4l2h264dec")){
++        qDebug()<<"Using V4L2 H.264 decoder";
++        return "h264parse ! v4l2h264dec ! ";
++    }
++    if(prefer_v4l2 && videoCodec==QOpenHDVideoHelper::VideoCodecH265 &&
++       gst_factory_exists("v4l2h265dec")){
++        qDebug()<<"Using V4L2 H.265 decoder";
++        return "h265parse ! v4l2h265dec ! ";
++    }
+     std::stringstream ss;
+@@ -85,11 +108,13 @@ static std::string gst_create_video_decoder(const QOpenHDVideoHelper::VideoCodec&
+  * @param udp_port the udp port to listen for rtp data
+  * @return the built pipeline, as a string
+  */
+-static std::string constructGstreamerPipeline(const QOpenHDVideoHelper::VideoStreamConfig& config){
+-    // QmlglSik is always for secondary video -
+-    // unless the user switched them around
+-
+-    auto stream_config=config.secondary_stream_config;
++static std::string constructGstreamerPipeline(
++    const QOpenHDVideoHelper::VideoStreamConfig& config,bool is_primary){
++    auto stream_config=is_primary
++        ? config.primary_stream_config
++        : config.secondary_stream_config;
+     if(config.generic.qopenhd_switch_primary_secondary){
+-       stream_config=config.primary_stream_config;
++       stream_config=is_primary
++           ? config.secondary_stream_config
++           : config.primary_stream_config;
+     }
+@@ -286,7 +312,11 @@ void GstQmlGlSinkStream::startVideo() {
+         stopVideoSafe();
+         assert(m_pipeline==nullptr);
+     }
+-    auto stream_config=m_videoStreamConfig.secondary_stream_config;
++    auto stream_config=m_isPrimaryStream
++        ? m_videoStreamConfig.primary_stream_config
++        : m_videoStreamConfig.secondary_stream_config;
+     if(m_videoStreamConfig.generic.qopenhd_switch_primary_secondary){
+-        stream_config=m_videoStreamConfig.primary_stream_config;
++        stream_config=m_isPrimaryStream
++            ? m_videoStreamConfig.secondary_stream_config
++            : m_videoStreamConfig.primary_stream_config;
+     }
+@@ -295,4 +325,4 @@ void GstQmlGlSinkStream::startVideo() {
+              << "codec=" << QString::fromStdString(QOpenHDVideoHelper::video_codec_to_string(stream_config.video_codec))
+              << "softwareDecoder=" << stream_config.enable_software_video_decoder;
+-    const auto pipeline=constructGstreamerPipeline(m_videoStreamConfig);
++    const auto pipeline=constructGstreamerPipeline(m_videoStreamConfig,m_isPrimaryStream);
+     qDebug() << logPrefix() << "GStreamer pipeline (udp -> depay -> decode -> qmlglsink):" << pipeline.c_str();

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -eu
+
+if [ "$EUID" -ne 0 ]; then
+    echo "This helper must run through pkexec or as root." >&2
+    exit 1
+fi
+
+require_ground_consumer()
+{
+    role="$(sed -n 's/^role=//p' /var/lib/openhd-k3/consumer.env 2>/dev/null | tail -n 1)"
+    [ "$role" = ground ] || {
+        echo "OpenHD K3 consumer is not installed for the ground role (role=${role:-missing})." >&2
+        exit 1
+    }
+}
+
+platform_preflight()
+{
+    systemctl is-active --quiet ti-k3-accelerators.target || {
+        echo "TI K3 accelerator target is not active." >&2
+        exit 1
+    }
+    command -v ti-k3-rpmsg-ready >/dev/null 2>&1 || {
+        echo "ti-k3-rpmsg-ready is missing." >&2
+        exit 1
+    }
+    command -v ti-k3-self-test >/dev/null 2>&1 || {
+        echo "ti-k3-self-test is missing." >&2
+        exit 1
+    }
+    ti-k3-rpmsg-ready >/dev/null || {
+        echo "TI K3 RPMsg contract is not ready." >&2
+        exit 1
+    }
+    ti-k3-self-test >/dev/null || {
+        echo "TI K3 self-test failed." >&2
+        exit 1
+    }
+}
+
+case "${1:-}" in
+    start)
+        require_ground_consumer
+        platform_preflight
+        systemctl start openhd-k3-consumer.target
+        systemctl is-active --quiet openhd.service || {
+            echo "openhd.service did not become active." >&2
+            exit 1
+        }
+        ;;
+    stop)
+        require_ground_consumer
+        systemctl stop \
+            openhd.service \
+            openhd-radio-watch.service \
+            openhd-sys-utils.service \
+            openhd-radio-network-guard.service \
+            openhd-k3-consumer.target
+        ;;
+    restart)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        require_ground_consumer
+        systemctl status \
+            ti-k3-accelerators.target \
+            openhd-k3-consumer.target \
+            openhd.service \
+            openhd-sys-utils.service \
+            openhd-radio-watch.service \
+            --no-pager -l
+        ;;
+    *)
+        echo "Usage: $0 start|stop|restart|status" >&2
+        exit 2
+        ;;
+esac

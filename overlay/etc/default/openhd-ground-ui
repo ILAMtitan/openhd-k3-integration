@@ -1,0 +1,6 @@
+# QOpenHD ground-station UI policy. RF/network policy remains owned by the
+# OpenHD K3 consumer layer.
+OPENHD_QOPENHD_FULLSCREEN=yes
+OPENHD_QOPENHD_RENDER_MODE=software-x11
+OPENHD_QOPENHD_DISABLE_PRIMARY_VIDEO=yes
+OPENHD_STOP_WITH_QOPENHD=no
