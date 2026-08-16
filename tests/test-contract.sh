@@ -4,6 +4,8 @@ set -Eeuo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 installer="$root/install-live.sh"
 patch8="$root/patches/openhd/0008-video-add-native-TI-J722S-IMX219-pipeline.patch"
+watcher="$root/overlay/usr/local/sbin/openhd-radio-watch"
+verifier="$root/verify-consumer.sh"
 
 # The installer reconstructs the known Native-R1 tree from the pinned
 # upstream source. The resulting Git tree is the source-identity invariant.
@@ -44,4 +46,19 @@ grep -Fq 'Wants=openhd-sys-utils.service openhd-radio-network-guard.service open
 grep -Fq 'USER_MODULE_NAME=88XXau modules' "$installer"
 ! grep -Fq 'USER_MODULE_NAME=88XXau_ohd modules' "$installer"
 
-echo 'PASS: Native-R1 source, role, camera, systemd, and RF naming contract'
+# Cold boot must not depend on a manual modprobe. The radio watcher loads the
+# installed OpenHD module before watching for its interface and can then restart
+# OpenHD if the interface appears after service startup.
+grep -Fq 'modprobe 88XXau_ohd' "$watcher"
+grep -Fq 'Initial RTL8812AU RF state:' "$watcher"
+grep -Fq 'restarting OpenHD' "$watcher"
+
+# Consumer verification must not pass merely because the OpenHD process is
+# alive while RF discovery later fails. Require the RTL interface and reject
+# the known delayed startup failure messages from the current OpenHD process.
+grep -Fq 'OpenHD RTL8812AU RF interface present' "$verifier"
+grep -Fq 'No openhd wifibroadcast card found' "$verifier"
+grep -Fq 'Link not functional' "$verifier"
+grep -Fq 'journalctl -b _PID=' "$verifier"
+
+echo 'PASS: Native-R1 source, role, camera, systemd, and RF naming/readiness contract'
