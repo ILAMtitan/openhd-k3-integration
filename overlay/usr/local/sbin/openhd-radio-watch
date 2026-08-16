@@ -30,6 +30,14 @@ radio_id()
     return 1
 }
 
+if modinfo 88XXau_ohd >/dev/null 2>&1; then
+    if modprobe 88XXau_ohd; then
+        log 'Ensured OpenHD RTL8812AU module 88XXau_ohd is loaded'
+    else
+        log 'Failed to load OpenHD RTL8812AU module 88XXau_ohd'
+    fi
+fi
+
 state="__INIT__"
 
 while :; do
