@@ -24,6 +24,24 @@ check_cmd() {
   fi
 }
 
+radio_iface()
+{
+  local path driver
+
+  for path in /sys/class/net/*; do
+    [[ -L "$path/device/driver" ]] || continue
+    driver=$(basename "$(readlink -f "$path/device/driver")" 2>/dev/null || true)
+    case "$driver" in
+      rtl88xxau_ohd|88XXau_ohd)
+        printf '%s\n' "${path##*/}"
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
 check_cmd 'ti-k3-accelerators.target active' systemctl is-active --quiet ti-k3-accelerators.target
 check_cmd 'TI K3 RPMsg contract ready' ti-k3-rpmsg-ready
 check_cmd 'TI K3 self-test passes' ti-k3-self-test
@@ -49,6 +67,24 @@ if [[ "$role" == air || "$role" == ground ]]; then
 else
   fail_msg "consumer role is valid (found: $role)"
 fi
+
+rf_iface=
+for _ in $(seq 1 80); do
+  rf_iface=$(radio_iface || true)
+  [[ -n "$rf_iface" ]] && break
+  sleep 0.25
+done
+
+if [[ -n "$rf_iface" ]]; then
+  pass_msg "OpenHD RTL8812AU RF interface present ($rf_iface)"
+else
+  fail_msg 'OpenHD RTL8812AU RF interface present'
+fi
+
+# OpenHD can remain alive for several seconds while it discovers radios and then
+# report a non-functional link. Give the current service instance time to finish
+# that startup phase before accepting it.
+sleep 12
 
 mapfile -t openhd_pids < <(pgrep -x openhd || true)
 
@@ -80,6 +116,13 @@ if [[ -n "$openhd_pid" && "$role" != unknown ]]; then
     pass_msg 'OpenHD process has TI GST_PLUGIN_PATH_1_0'
   else
     fail_msg 'OpenHD process has TI GST_PLUGIN_PATH_1_0'
+  fi
+
+  openhd_log=$(journalctl -b _PID="$openhd_pid" --no-pager 2>/dev/null || true)
+  if grep -Eq 'No openhd wifibroadcast card found|Link not functional|Startup issue: No openhd wifibroadcast card found' <<<"$openhd_log"; then
+    fail_msg 'OpenHD current process completed RF discovery without a wifibroadcast startup failure'
+  else
+    pass_msg 'OpenHD current process completed RF discovery without a wifibroadcast startup failure'
   fi
 fi
 
