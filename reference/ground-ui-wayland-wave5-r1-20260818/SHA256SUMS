@@ -1,0 +1,16 @@
+d22c6aa875606474c4ef03066d8084341f24ca052f644b00231d119cad9c8309  ./manifests/drm.txt
+cf0a50aaaf8e76e26b4ebe3b638a86a0364f46720221d9f96f405fc1def45813  ./manifests/platform.txt
+cd98b902da55ae4a8e1ad203ba402d10cb2d864225ea1302586d7412ece1fd60  ./manifests/qopenhd-head.txt
+5708177afc5f71d47a536ab4e1eccedc9b4f509ed92174d570c059838982e797  ./manifests/qopenhd-status.txt
+de76543e490ff6fb6036055f6cd11bc3e21a1f75a107179c37ddfe4320718ce3  ./manifests/weston-boot.txt
+26d2e68eb0b1fe730659fe82a498e8e9dc72654ae71068669606ba95f2b02ad7  ./overlay/etc/profile.d/weston-k3.sh
+54ace3e7120e600f10b9c67daf3ab77849242d68252e64d3974ce0e16cd7452e  ./overlay/etc/systemd/system/weston-k3.service
+5e36c2b2b3d4288a4d91e9d377bbf63f7d5174f5bde7bdf084435c4b00488e68  ./overlay/home/tidrone/.config/weston.ini
+21464d0e6fdd7629f0458c7a069d2104038ce4252650a2d131787051c3110121  ./overlay/usr/local/sbin/weston-k3-launch
+0279c2f1f55be090d356f88f29a5d6325adf58adf02c09c0a3e0a4f7d4048fc0  ./patches/gstreamer-1.24.2-qmlgl-gles2-precision.patch
+a85b9955ec769130b9a11a69d643e025aaa8274382a167bc5207cf09972e92f7  ./patches/qopenhd-beagley-ground-ui.patch
+27704624c7e7ce7c82b46017ba854cb17e49d1cfa73ce9322d9e03713aa9acc1  ./qualification/qmlgl-render.txt
+5752371c085f8f1a42637ad67cf7874e4ad0d437e903e05747422641888bf6d5  ./qualification/qopenhd-pipeline.txt
+868b01ec1423334f43fe418b89b46978ebdd8b2a94c5784791b1993ee9c9fea8  ./qualification/wave5-decode.txt
+01acfd653deba9cf17211e23c08da1cc571a8012466702ba9b348ad44827e346  ./README.md
+f3c43982e67e6dbfcbaa746cd6061420d3a9a3f5199505cd91878e1938d518a1  ./runtime/qopenhd-runtime.conf

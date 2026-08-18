@@ -1,0 +1,474 @@
+diff --git a/QOpenHD.pro b/QOpenHD.pro
+index 814cb4897..aa20bcbef 100755
+--- a/QOpenHD.pro
++++ b/QOpenHD.pro
+@@ -103,7 +103,7 @@ QT +=core quick qml gui \
+ QT += opengl
+ QT += charts
+ QT += gui-private
+-#LIBS += Ldrm
++LIBS += -ldrm
+ 
+ INCLUDEPATH += $$PWD/lib
+ INCLUDEPATH += $$PWD/app
+@@ -118,23 +118,10 @@ include(app/videostreaming/vscommon/vscommon.pri)
+ 
+ # Video is quite platform dependent, if you have compile issues, try compiling without any videostreaming enabled first ;)
+ LinuxBuild {
+-    # Avcodec decode and display, all sources
+-    # Replaced gstreamer for now
+-    # Comment the line below to build without avcodec (you won't have any video decoding capabilities in this case though)
+-    # However, this can be usefully for figuring out compiler issue(s) on different platform(s)
+-    # NOTE: QT Creator is quite bad at figuring out changes here, you might need a "full" rebuild or manualy delete
+-    # the build dir/cache, then rebuild
+-    include(app/videostreaming/avcodec/avcodec_video.pri)
+-
+     # Gstreamer / qmlglsink decode and display, all sources
+     # r.n only used for secondary video and for primary video only on platforms we cannot do primary video via QSG / avcodec
+     include(app/videostreaming/gstreamer/gst_video.pri)
+ 
+-    SOURCES += \
+-        app/videostreaming/avcodec/drm_kms/kms_renderer.cpp
+-
+-    HEADERS += \
+-        app/videostreaming/avcodec/drm_kms/kms_renderer.h
+ }
+ 
+ # gst Qt plugins in windows is hard
+diff --git a/app/main.cpp b/app/main.cpp
+index 37710ce87..669760e06 100755
+--- a/app/main.cpp
++++ b/app/main.cpp
+@@ -1,9 +1,12 @@
+ #include "qqmlcontext.h"
+ #include "qscreen.h"
+ #include <QApplication>
++#include <QWindow>
+ #include <QQmlApplicationEngine>
+ #include <QQmlComponent>
+ #include <QDebug>
++#include <QSurfaceFormat>
++#include <QQuickWindow>
+ #include <QFontDatabase>
+ #if defined(__android__)
+ #include <QtAndroid>
+@@ -155,6 +158,11 @@ static void load_fonts(){
+ 
+ // Write context properties for all platforms, e.g. such that we have boolean variable(s) accessible from .qml
+ static void write_platform_context_properties(QQmlApplicationEngine& engine){
++    const QByteArray disable_primary_video=qgetenv("QOPENHD_DISABLE_PRIMARY_VIDEO");
++    engine.rootContext()->setContextProperty(
++        "QOPENHD_DISABLE_PRIMARY_VIDEO",
++        QVariant(!disable_primary_video.isEmpty() && disable_primary_video!="0"));
++
+ #if defined(__android__)
+     engine.rootContext()->setContextProperty("IsAndroid", QVariant(true));
+ #else
+@@ -328,7 +336,24 @@ int main(int argc, char *argv[]) {
+     //QLoggingCategory::setFilterRules("qt.qpa.eglfs.*=true");
+     //QLoggingCategory::setFilterRules("qt.qpa.egl*=true");
+ 
+-    QApplication app(argc, argv);
++    if (qEnvironmentVariableIsSet("QOPENHD_FORCE_GLES")) {
++        QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
++
++        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
++        format.setRenderableType(QSurfaceFormat::OpenGLES);
++        format.setVersion(2, 0);
++        format.setDepthBufferSize(24);
++        format.setStencilBufferSize(8);
++    format.setAlphaBufferSize(8);
++        QSurfaceFormat::setDefaultFormat(format);
++
++        qDebug() << "QOpenHD: forcing OpenGL ES";
++    }
++
++    // OPENHD_EXTERNAL_OVERLAY_ALPHA
++QQuickWindow::setDefaultAlphaBuffer(true);
++
++QApplication app(argc, argv);
+ 
+     if (QOpenHD::instance().is_platform_rock()) {
+         const QString mode_override = settings.value("screen_mode_override", "").toString();
+@@ -492,6 +517,15 @@ int main(int argc, char *argv[]) {
+     //const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
+     const QUrl url(QStringLiteral("qrc:/main.qml"));
+     engine.load(url);
++    const QByteArray start_fullscreen=qgetenv("QOPENHD_START_FULLSCREEN");
++    if(!start_fullscreen.isEmpty() && start_fullscreen!="0" &&
++       !engine.rootObjects().isEmpty()){
++        auto* root_window=qobject_cast<QWindow*>(engine.rootObjects().constFirst());
++        if(root_window!=nullptr){
++            qDebug()<<"Starting QOpenHD fullscreen by environment request";
++            root_window->showFullScreen();
++        }
++    }
+     //engine.loadFromModule("QOpenHD", "qrc:/main.qml");
+     //engine.loadFromModule("QOpenHDApp","qrc:/main.qml");
+     //engine.load("qml/main.qml");
+diff --git a/app/util/qrenderstats.cpp b/app/util/qrenderstats.cpp
+index 4b82a4b8f..b4a779502 100644
+--- a/app/util/qrenderstats.cpp
++++ b/app/util/qrenderstats.cpp
+@@ -1,9 +1,5 @@
+ #include "qrenderstats.h"
+ 
+-#if defined(__linux__) && !defined(__android__)
+-#include "videostreaming/avcodec/drm_kms/kms_renderer.h"
+-#endif
+-
+ #include <qapplication.h>
+ #include "util/qopenhd.h"
+ #include <algorithm>
+@@ -39,28 +35,6 @@ void QRenderStats::registerOnWindow(QQuickWindow *window)
+     connect(window, &QQuickWindow::beforeRenderPassRecording, this, &QRenderStats::m_QQuickWindow_beforeRenderPassRecording, Qt::DirectConnection);
+     connect(window, &QQuickWindow::afterRenderPassRecording, this, &QRenderStats::m_QQuickWindow_afterRenderPassRecording, Qt::DirectConnection);
+ #if defined(__linux__) && !defined(__android__)
+-    KmsRenderer::instance().ensure_started();
+-    set_external_video_fps_str("0 fps");
+-    if (!m_present_timer) {
+-        m_present_timer = new QTimer(this);
+-        m_present_timer->setTimerType(Qt::PreciseTimer);
+-        m_present_timer->setInterval(250);
+-        connect(m_present_timer, &QTimer::timeout, this, [this]() {
+-            const auto now = std::chrono::steady_clock::now();
+-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_external_ts);
+-            if (elapsed.count() <= 0) {
+-                return;
+-            }
+-            const uint64_t total = KmsRenderer::instance().get_received_frames();
+-            const uint64_t delta = total - m_last_external_frames;
+-            const double fps = (static_cast<double>(delta) * 1000.0) / static_cast<double>(elapsed.count());
+-            m_last_external_frames = total;
+-            m_last_external_ts = now;
+-            set_external_video_fps_str(QString("%1 fps").arg(fps, 0, 'f', 0));
+-        });
+-        m_present_timer->start();
+-    }
+-
+     m_ui_fps_cap = QOpenHD::instance().get_ui_fps_cap();
+     if (m_ui_fps_cap > 0) {
+         window->installEventFilter(this);
+diff --git a/app/videostreaming/gstreamer/gst_helper.hpp b/app/videostreaming/gstreamer/gst_helper.hpp
+index 730f19918..52529515b 100644
+--- a/app/videostreaming/gstreamer/gst_helper.hpp
++++ b/app/videostreaming/gstreamer/gst_helper.hpp
+@@ -107,14 +107,31 @@ static void link_gsteamer_to_qt_window(GstElement *qmlglsink,QQuickItem *qtOutWi
+       g_object_set(qmlglsink, "widget", gpointer(qtOutWindow), NULL);
+ }
+ 
+-// find qmlglsink in gstreamer pipeline and link it to the window
+-static void link_gstreamer_pipe_to_qt_window(GstElement * m_pipeline,QQuickItem *qtOutWindow){
+-    GstElement *qmlglsink = gst_bin_get_by_name(GST_BIN(m_pipeline), "qmlglsink");
++// Find qmlglsink, attach it to the Qt Quick item, then bring the sink
++// to READY before the rest of the pipeline. qmlglsink must propagate
++// Qt's GstGLDisplay before glupload/glcolorconvert create their GL context.
++static void link_gstreamer_pipe_to_qt_window(GstElement *m_pipeline,
++                                              QQuickItem *qtOutWindow){
++    GstElement *qmlglsink =
++        gst_bin_get_by_name(GST_BIN(m_pipeline), "qmlglsink");
++
+     if(qmlglsink==nullptr){
+-        qDebug()<<"link_gstreamer_pipe_to_qt_window: no qmlglimagesink";
++        qDebug()<<"link_gstreamer_pipe_to_qt_window: no qmlglsink";
+         return;
+     }
++
+     link_gsteamer_to_qt_window(qmlglsink,qtOutWindow);
++
++    const GstStateChangeReturn ret =
++        gst_element_set_state(qmlglsink, GST_STATE_READY);
++
++    qDebug()<<"qmlglsink READY result:"<<ret;
++
++    if(ret == GST_STATE_CHANGE_FAILURE){
++        qWarning("qmlglsink failed to enter READY");
++    }
++
++    gst_object_unref(qmlglsink);
+ }
+ 
+ 
+diff --git a/app/videostreaming/gstreamer/gst_video.pri b/app/videostreaming/gstreamer/gst_video.pri
+index 82f6379ea..e6b647088 100644
+--- a/app/videostreaming/gstreamer/gst_video.pri
++++ b/app/videostreaming/gstreamer/gst_video.pri
+@@ -98,7 +98,7 @@ android{
+ }else {
+     message(gst linux)
+     DEFINES += QOPENHD_ENABLE_GSTREAMER_QMLGLSINK
+-    #DEFINES += QOPENHD_GSTREAMER_PRIMARY_VIDEO
++    DEFINES += QOPENHD_GSTREAMER_PRIMARY_VIDEO
+     DEFINES += QOPENHD_GSTREAMER_SECONDARY_VIDEO
+ 
+     SOURCES += \
+diff --git a/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp b/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
+index 8583fb13b..7997e44a0 100644
+--- a/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
++++ b/app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
+@@ -1,6 +1,7 @@
+ #include "gstqmlglsinkstream.h"
+ 
+ #include <QtQuick>
++#include <cstdlib>
+ #include <sstream>
+ 
+ #include "gst_helper.hpp"
+@@ -61,17 +62,40 @@ static std::string gst_create_jeston_test(const QOpenHDVideoHelper::VideoCodec&
+    return ss.str();
+ }
+ 
++static bool gst_factory_exists(const char* name){
++    GstElementFactory* factory=gst_element_factory_find(name);
++    if(factory==nullptr){
++        return false;
++    }
++    gst_object_unref(factory);
++    return true;
++}
++
+ static std::string gst_create_video_decoder(const QOpenHDVideoHelper::VideoCodec& videoCodec,bool force_sw){
+    qDebug()<<"gst_create_video_decoder force_sw:"<<force_sw;
+     if(force_sw){
+         return gst_create_always_software_decoder(videoCodec);
+     }
++    const char* prefer_v4l2_env=std::getenv("QOPENHD_PREFER_V4L2_DECODER");
++    const bool prefer_v4l2=prefer_v4l2_env!=nullptr &&
++        std::string(prefer_v4l2_env)!="" &&
++        std::string(prefer_v4l2_env)!="0";
++    if(prefer_v4l2 && videoCodec==QOpenHDVideoHelper::VideoCodecH264 &&
++       gst_factory_exists("v4l2h264dec")){
++        qDebug()<<"Using V4L2 H.264 decoder";
++        return "h264parse ! v4l2h264dec ! ";
++    }
++    if(prefer_v4l2 && videoCodec==QOpenHDVideoHelper::VideoCodecH265 &&
++       gst_factory_exists("v4l2h265dec")){
++        qDebug()<<"Using V4L2 H.265 decoder";
++        return "h265parse ! v4l2h265dec ! ";
++    }
+     std::stringstream ss;
+     // NOTE: force sw only has an effect on when decodebin does hw automatically, and on h264
+     if(videoCodec==QOpenHDVideoHelper::VideoCodecH264){
+-        //NOTE: decodebin on rpi for h264 only worked after we updated the kernel.
++        // TI AM67A Wave5 hardware H.264 decoder
+         ss<<"h264parse ! ";
+-        ss<<"decodebin ! ";
++        ss<<"v4l2h264dec capture-io-mode=dmabuf ! ";
+     }else if(videoCodec==QOpenHDVideoHelper::VideoCodecH265){
+         //ss<<"h265parse ! ";
+         ss<<"decodebin ! ";
+@@ -89,13 +113,15 @@ static std::string gst_create_video_decoder(const QOpenHDVideoHelper::VideoCodec
+  * @param udp_port the udp port to listen for rtp data
+  * @return the built pipeline, as a string
+  */
+-static std::string constructGstreamerPipeline(const QOpenHDVideoHelper::VideoStreamConfig& config){
+-    // QmlglSik is always for secondary video -
+-    // unless the user switched them around
+-
+-    auto stream_config=config.secondary_stream_config;
++static std::string constructGstreamerPipeline(
++    const QOpenHDVideoHelper::VideoStreamConfig& config,bool is_primary){
++    auto stream_config=is_primary
++        ? config.primary_stream_config
++        : config.secondary_stream_config;
+     if(config.generic.qopenhd_switch_primary_secondary){
+-       stream_config=config.primary_stream_config;
++       stream_config=is_primary
++           ? config.secondary_stream_config
++           : config.primary_stream_config;
+     }
+     std::stringstream ss;
+ 
+@@ -111,7 +137,7 @@ static std::string constructGstreamerPipeline(const QOpenHDVideoHelper::VideoStr
+     if(false){
+         ss<<"nvvidconv ! glupload  ! qmlglsink name=qmlglsink sync=false";
+     }else{
+-        ss << " queue ! ";
++        ss << " queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! ";
+         ss << " glupload ! glcolorconvert !";
+         ss << " qmlglsink name=qmlglsink sync=false";
+     }
+@@ -283,14 +309,18 @@ void GstQmlGlSinkStream::startVideo() {
+         stopVideoSafe();
+         assert(m_pipeline==nullptr);
+     }
+-    auto stream_config=m_videoStreamConfig.secondary_stream_config;
++    auto stream_config=m_isPrimaryStream
++        ? m_videoStreamConfig.primary_stream_config
++        : m_videoStreamConfig.secondary_stream_config;
+     if(m_videoStreamConfig.generic.qopenhd_switch_primary_secondary){
+-        stream_config=m_videoStreamConfig.primary_stream_config;
++        stream_config=m_isPrimaryStream
++            ? m_videoStreamConfig.secondary_stream_config
++            : m_videoStreamConfig.primary_stream_config;
+     }
+     qDebug() << logPrefix() << "Active stream (udp input -> display) port=" << stream_config.udp_rtp_input_port
+              << "codec=" << QString::fromStdString(QOpenHDVideoHelper::video_codec_to_string(stream_config.video_codec))
+              << "softwareDecoder=" << stream_config.enable_software_video_decoder;
+-    const auto pipeline=constructGstreamerPipeline(m_videoStreamConfig);
++    const auto pipeline=constructGstreamerPipeline(m_videoStreamConfig,m_isPrimaryStream);
+     qDebug() << logPrefix() << "GStreamer pipeline (udp -> depay -> decode -> qmlglsink):" << pipeline.c_str();
+     GError *error = nullptr;
+     m_pipeline = gst_parse_launch(pipeline.c_str(), &error);
+@@ -312,6 +342,47 @@ void GstQmlGlSinkStream::startVideo() {
+ 
+     link_gstreamer_pipe_to_qt_window(m_pipeline,m_videoOutputWindow);
+ 
++    // QOPENHD_QMLGL_READY_FIRST
++    //
++    // qmlglsink must reach READY before glupload/glcolorconvert so
++    // Qt's GstGLDisplay is propagated to the rest of the pipeline.
++    GstElement *qmlglsink =
++        gst_bin_get_by_name(GST_BIN(m_pipeline), "qmlglsink");
++
++    if (qmlglsink) {
++        const GstStateChangeReturn ready_ret =
++            gst_element_set_state(qmlglsink, GST_STATE_READY);
++
++        qDebug() << logPrefix()
++                 << "qmlglsink READY result="
++                 << ready_ret;
++
++        if (ready_ret == GST_STATE_CHANGE_FAILURE) {
++            qWarning() << logPrefix()
++                       << "qmlglsink failed to enter READY";
++        } else {
++            GstState state = GST_STATE_NULL;
++            GstState pending = GST_STATE_VOID_PENDING;
++
++            gst_element_get_state(
++                qmlglsink,
++                &state,
++                &pending,
++                GST_SECOND);
++
++            qDebug() << logPrefix()
++                     << "qmlglsink state="
++                     << gst_element_state_get_name(state)
++                     << "pending="
++                     << gst_element_state_get_name(pending);
++        }
++
++        gst_object_unref(qmlglsink);
++    } else {
++        qWarning() << logPrefix()
++                   << "Cannot find qmlglsink before pipeline start";
++    }
++
+     gst_element_set_state (m_pipeline, GST_STATE_PLAYING);
+     lastDataTimeout = QDateTime::currentMSecsSinceEpoch();
+     qDebug()<<logPrefix()<<"GstQmlGlSinkStream::startVideo() end";
+diff --git a/qml/main.qml b/qml/main.qml
+index 857bd11d4..9e2a3cffa 100755
+--- a/qml/main.qml
++++ b/qml/main.qml
+@@ -35,8 +35,9 @@ ApplicationWindow {
+         _qrenderstats.set_window_height(height)
+     }
+ 
+-    contentOrientation: settings.general_screen_rotation===0 ? Qt.PortraitOrientation : Qt.LandscapeOrientation
+-    contentItem.rotation: settings.general_screen_rotation
++    // BeagleY-AI/Weston: physical display rotation is handled by the compositor.
++    contentOrientation: Qt.LandscapeOrientation
++    contentItem.rotation: 0
+ 
+     //minimumWidth: 850
+     //minimumHeight: 480
+@@ -45,7 +46,9 @@ ApplicationWindow {
+     // but rather done independently by using a pipeline that directly goes to the HW composer (e.g. mmal on pi).
+     //color: "transparent" //Consti10 transparent background
+     //color : "#2C3E50" // reduce KREBS
+-    color: settings.app_background_transparent ? "transparent" : "#2C3E50"
++    // OPENHD_EXTERNAL_VIDEO_OVERLAY_PROOF
++    color: QOPENHD_DISABLE_PRIMARY_VIDEO ? "transparent" :
++        (settings.app_background_transparent ? "transparent" : "#2C3E50")
+     //flags: Qt.WindowStaysOnTopHint| Qt.FramelessWindowHint| Qt.X11BypassWindowManagerHint;
+     //flags: Qt.WindowStaysOnTopHint| Qt.X11BypassWindowManagerHint;
+     //visibility: "FullScreen"
+@@ -76,6 +79,9 @@ ApplicationWindow {
+             anchors.fill: parent
+             z: 1.0
+             source: {
++                if(QOPENHD_DISABLE_PRIMARY_VIDEO){
++                    return ""
++                }
+                 if(QOPENHD_ENABLE_VIDEO_VIA_ANDROID){
+                     return "../video/ExpMainVideoAndroid.qml"
+                 }
+diff --git a/qml/video/MainVideoGStreamer.qml b/qml/video/MainVideoGStreamer.qml
+index e76320da6..1295e78fa 100644
+--- a/qml/video/MainVideoGStreamer.qml
++++ b/qml/video/MainVideoGStreamer.qml
+@@ -10,9 +10,33 @@ GstGLVideoItem {
+     id: mainVideoGStreamer
+     objectName: "mainVideoGStreamer"
+ 
++    property bool streamInitDone: false
++
++    function scheduleStreamInit() {
++        if (!streamInitDone && itemInitialized) {
++            initAfterSceneGraph.restart()
++        }
++    }
++
++    Timer {
++        id: initAfterSceneGraph
++        interval: 0
++        repeat: false
++        onTriggered: {
++            if (mainVideoGStreamer.streamInitDone || !mainVideoGStreamer.itemInitialized) {
++                return
++            }
++            mainVideoGStreamer.streamInitDone = true
++            console.log("mainVideoGStreamer: scene graph GL context initialized")
++            _primary_video_gstreamer_qml.check_common_mistakes_then_init(mainVideoGStreamer)
++        }
++    }
++
+     Component.onCompleted: {
+         console.log("mainVideoGStreamer (Qmlglsink) created")
+-        _secondary_video_gstreamer_qml.check_common_mistakes_then_init(mainVideoGStreamer)
++        scheduleStreamInit()
+     }
+ 
++    onItemInitializedChanged: scheduleStreamInit()
++
+ }
+diff --git a/qml/video/SecondaryVideoGstreamerPane.qml b/qml/video/SecondaryVideoGstreamerPane.qml
+index 875b9aa89..7fec21f3b 100644
+--- a/qml/video/SecondaryVideoGstreamerPane.qml
++++ b/qml/video/SecondaryVideoGstreamerPane.qml
+@@ -15,8 +15,32 @@ GstGLVideoItem {
+     objectName: "secondaryVideoGStreamer"
+     z: 0.0
+ 
++    property bool streamInitDone: false
++
++    function scheduleStreamInit() {
++        if (!streamInitDone && itemInitialized) {
++            initAfterSceneGraph.restart()
++        }
++    }
++
++    Timer {
++        id: initAfterSceneGraph
++        interval: 0
++        repeat: false
++        onTriggered: {
++            if (secondaryVideoGStreamer.streamInitDone || !secondaryVideoGStreamer.itemInitialized) {
++                return
++            }
++            secondaryVideoGStreamer.streamInitDone = true
++            console.log("secondaryVideoGStreamer: scene graph GL context initialized")
++            _secondary_video_gstreamer_qml.check_common_mistakes_then_init(secondaryVideoGStreamer)
++        }
++    }
++
+     Component.onCompleted: {
+         console.log("secondaryVideoGStreamer (Qmlglsink) created")
+-        _secondary_video_gstreamer_qml.check_common_mistakes_then_init(secondaryVideoGStreamer)
++        scheduleStreamInit()
+     }
++
++    onItemInitializedChanged: scheduleStreamInit()
+ }

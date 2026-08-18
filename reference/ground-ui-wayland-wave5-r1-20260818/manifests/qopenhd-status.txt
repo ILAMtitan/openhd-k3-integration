@@ -1,0 +1,19 @@
+ M QOpenHD.pro
+ M app/main.cpp
+ M app/util/qrenderstats.cpp
+ M app/videostreaming/gstreamer/gst_helper.hpp
+ M app/videostreaming/gstreamer/gst_video.pri
+ M app/videostreaming/gstreamer/gstqmlglsinkstream.cpp
+ M qml/main.qml
+ M qml/video/MainVideoGStreamer.qml
+ M qml/video/SecondaryVideoGstreamerPane.qml
+?? app/main.cpp.pre-beagley-gles
+?? app/main.cpp.pre-external-overlay
+?? app/videostreaming/gstreamer/gst_helper.hpp.pre-qmlgl-ready
+?? app/videostreaming/gstreamer/gst_helper.hpp.pre-scenegraph-fix
+?? app/videostreaming/gstreamer/gstqmlglsinkstream.cpp.pre-primary-stream-fix
+?? "ha256sum \\"
+?? qml/main.qml.pre-external-overlay
+?? qml/video/MainVideoGStreamer.qml.pre-primary-fix
+?? qml/video/MainVideoGStreamer.qml.pre-scenegraph-fix
+?? qml/video/SecondaryVideoGstreamerPane.qml.pre-scenegraph-fix

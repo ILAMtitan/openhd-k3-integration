@@ -1,0 +1,28 @@
+#!/bin/sh
+
+DRM_CARD=""
+
+for status in /sys/class/drm/card*-DSI-*/status; do
+    [ -r "$status" ] || continue
+
+    if [ "$(cat "$status")" = "connected" ]; then
+        connector="${status%/status}"
+        connector="${connector##*/}"
+        DRM_CARD="${connector%%-*}"
+        break
+    fi
+done
+
+if [ -z "$DRM_CARD" ]; then
+    echo "weston-k3-launch: no connected DSI DRM connector found" >&2
+    exit 1
+fi
+
+echo "weston-k3-launch: using $DRM_CARD"
+
+exec /usr/bin/weston \
+    --backend=drm-backend.so \
+    --renderer=gl \
+    --drm-device="$DRM_CARD" \
+    --socket=wayland-0 \
+    --idle-time=0

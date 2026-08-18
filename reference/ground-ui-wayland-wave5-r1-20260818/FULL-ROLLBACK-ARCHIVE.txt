@@ -1,0 +1,7 @@
+Full rollback archive:
+openhd-ground-ui-checkpoint-20260818-full.tar.gz
+
+Stored outside Git because it contains the exact qualified QOpenHD/qmlgl binaries and raw debug logs.
+
+SHA256:
+YOUR_FULL_ARCHIVE_SHA256_HERE

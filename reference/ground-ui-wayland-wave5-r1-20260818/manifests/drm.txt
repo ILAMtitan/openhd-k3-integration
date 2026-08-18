@@ -1,0 +1,15 @@
+===== DRM =====
+total 0
+drwxr-xr-x 2 root root        100 Jan  1  1970 by-path
+crw-rw---- 1 root video  226,   0 Jan  1  1970 card0
+crw-rw---- 1 root video  226,   1 Jan  1  1970 card1
+crw-rw---- 1 root render 226, 128 Jan  1  1970 renderD128
+
+card0
+driver=pvrsrvkm
+card1
+driver=tidss
+
+===== CONNECTORS =====
+card1-DSI-1=connected
+card1-HDMI-A-1=disconnected

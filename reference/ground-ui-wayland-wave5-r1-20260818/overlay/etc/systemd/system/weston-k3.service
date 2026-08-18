@@ -1,0 +1,35 @@
+[Unit]
+Description=Weston Wayland compositor for BeagleY-AI
+Documentation=man:weston(1) man:weston.ini(5)
+
+Requires=seatd.service
+After=seatd.service systemd-user-sessions.service
+Conflicts=lightdm.service
+
+[Service]
+Type=simple
+
+User=tidrone
+Group=tidrone
+SupplementaryGroups=video render input
+
+Environment=HOME=/home/tidrone
+Environment=XDG_RUNTIME_DIR=/run/weston
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=LIBSEAT_BACKEND=seatd
+Environment=XDG_SESSION_TYPE=wayland
+
+RuntimeDirectory=weston
+RuntimeDirectoryMode=0700
+
+WorkingDirectory=/home/tidrone
+
+ExecStart=/usr/local/sbin/weston-k3-launch
+Restart=on-failure
+RestartSec=2
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

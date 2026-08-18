@@ -1,0 +1,94 @@
+seatd=active
+weston=active
+weston-enabled=enabled
+lightdm=static
+
+Aug 18 13:24:35 beagley-ai systemd[1]: Started weston-k3.service - Weston Wayland compositor for BeagleY-AI.
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: weston-k3-launch: using card1
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: Date: 2026-08-18 UTC
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.522] weston 13.0.0
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]:                https://wayland.freedesktop.org
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]:                Bug reports to: https://gitlab.freedesktop.org/wayland/weston/issues/
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]:                Build: 13.0.0
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.526] Command line: /usr/bin/weston --backend=drm-backend.so --renderer=gl --drm-device=card1 --socket=wayland-0 --idle-time=0
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.526] OS: Linux, 6.12.49-vendor-k3-beagle, #2 SMP PREEMPT Sun Nov  2 04:35:52 UTC 2025, aarch64
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.526] Flight recorder: enabled
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.529] Using config file '/home/tidrone/.config/weston.ini'
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.532] Output repaint window is 7 ms maximum.
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.536] Loading module '/usr/lib/aarch64-linux-gnu/libweston-13/drm-backend.so'
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.585] initializing drm backend
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.585] Trying libseat launcher...
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.592] [libseat/libseat.c:62] Seat opened with backend 'seatd'
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.592] [libseat/backend/seatd.c:212] Enabling seat
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.592] libseat: session control granted
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.599] using /dev/dri/card1
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.599] DRM: supports atomic modesetting
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.599] DRM: supports GBM modifiers
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.599] DRM: does not support async page flipping
+Aug 18 13:24:35 beagley-ai weston-k3-launch[1457]: [13:24:35.599] DRM: supports picture aspect ratio
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.851] Loading module '/usr/lib/aarch64-linux-gnu/libweston-13/gl-renderer.so'
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.941] Using rendering device: /dev/dri/renderD128
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.942] EGL version: 1.5
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.943] EGL vendor: Mesa Project
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.943] EGL client APIs: OpenGL_ES
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]: [13:24:36.943] EGL features:
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                EGL Wayland extension: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                context priority: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                buffer age: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                partial update: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                swap buffers with damage: no
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                configless context: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                surfaceless context: yes
+Aug 18 13:24:36 beagley-ai weston-k3-launch[1457]:                dmabuf support: modifiers
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.021] GL version: OpenGL ES 3.2 build 25.3@6908880
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.021] GLSL version: OpenGL ES GLSL ES 3.20 build 25.3@6908880
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.022] GL vendor: Imagination Technologies
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.022] GL renderer: PowerVR B-Series BXS-4-64
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.022] warning: Disabling render GPU timeline due to missing GL_EXT_disjoint_timer_query extension
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.143] GL ES 3.2 - renderer features:
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                read-back format: ARGB8888
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                glReadPixels supports y-flip: no
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                wl_shm 10 bpc formats: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                wl_shm 16 bpc formats: no
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                wl_shm half-float formats: no
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                internal R and RG formats: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                OES_EGL_image_external: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.144] Using GL renderer
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.244] event0  - Waveshare GT911 Polling Touchscreen: is tagged by udev as: Touchscreen
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.249] event0  - Waveshare GT911 Polling Touchscreen: device is a touch device
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.263] event1  - tps65219-pwrbutton: is tagged by udev as: Keyboard
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.264] event1  - tps65219-pwrbutton: device is a keyboard
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.266] Touchscreen - Waveshare GT911 Polling Touchscreen - /sys/devices/platform/bus@f0000/20000000.i2c/i2c-3/3-005d/input/input0/event0
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.266] libinput: configuring device "Waveshare GT911 Polling Touchscreen".
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.266] input device event0 has no enabled output associated (none named), skipping calibration for now.
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.396] libinput: configuring device "tps65219-pwrbutton".
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.398] DRM: head 'HDMI-A-1' found, connector 41 is disconnected.
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.399] DRM: head 'DSI-1' found, connector 51 is connected, EDID make 'unknown', model 'unknown', serial ''
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                Supported EOTF modes: SDR
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.400] Registered plugin API 'weston_drm_output_api_v1' of size 40
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.400] Registered plugin API 'weston_drm_virtual_output_api_v2' of size 48
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.400] Color manager: no-op
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.400] Output 'DSI-1' attempts EOTF mode: SDR
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.401] Output 'DSI-1' using color profile: stock sRGB color profile
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.401] Chosen EGL config details: id:  10 rgba: 8 8 8 0 buf: 24 dep:  0 stcl: 0 int: 1-1 type: win|pbf vis_id: XRGB8888 (0x34325258)
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.401] Initialized backlight for head 'DSI-1', device /sys/class/backlight/waveshare-5dsi-backlight
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.401] Output DSI-1 (crtc 49) video modes:
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                720x1280@66.1, preferred, current, 70.0 MHz
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.401] associating input device event0 with output DSI-1 (none by udev)
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.403] associating input device event1 with output DSI-1 (none by udev)
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.409] Output 'DSI-1' enabled with head(s) DSI-1
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.409] Compositor capabilities:
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                arbitrary surface rotation: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                screen capture uses y-flip: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                cursor planes: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                arbitrary resolutions: no
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                view mask clipping: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                explicit sync: yes
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                color operations: no
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                presentation clock: CLOCK_MONOTONIC, id 1
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]:                presentation clock resolution: 0.000000001 s
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.413] Loading module '/usr/lib/aarch64-linux-gnu/weston/desktop-shell.so'
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.420] launching '/usr/libexec/weston-keyboard'
+Aug 18 13:24:37 beagley-ai weston-k3-launch[1457]: [13:24:37.428] launching '/usr/libexec/weston-desktop-shell'
+Aug 18 13:25:27 beagley-ai weston-k3-launch[1812]: Unknown parameter: ?2004
+Aug 18 13:25:29 beagley-ai weston-k3-launch[1525]: child 1812 exited
