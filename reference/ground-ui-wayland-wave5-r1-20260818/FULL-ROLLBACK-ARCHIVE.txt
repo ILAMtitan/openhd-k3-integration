@@ -4,4 +4,4 @@ openhd-ground-ui-checkpoint-20260818-full.tar.gz
 Stored outside Git because it contains the exact qualified QOpenHD/qmlgl binaries and raw debug logs.
 
 SHA256:
-YOUR_FULL_ARCHIVE_SHA256_HERE
+01596b8ab699e8c4d36812e266c37c05705b10ba859816885ab24fbf67711abf
