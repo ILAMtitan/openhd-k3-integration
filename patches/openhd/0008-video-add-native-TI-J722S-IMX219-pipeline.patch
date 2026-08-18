@@ -62,42 +62,42 @@ index 3af84836..57c4755d 100644
 +  ss << "v4l2src device=/run/ti-k3/camera-video "
 +        "io-mode=dmabuf-import do-timestamp=true ! ";
 +
-+  ss << "video/x-bayer,format=rggb,width=1920,height=1080,"
-+        "framerate=30/1 ! ";
++  ss << "video/x-bayer,format=rggb,width=1640,height=1232,"
++        "framerate=60/1 ! ";
 +
 +  ss << "tiovxisp "
 +        "sensor-name=SENSOR_SONY_IMX219_RPI "
 +        "dcc-isp-file=/opt/imaging/imx219/linear/"
-+        "dcc_viss_1920x1080.bin "
++        "dcc_viss_1640x1232.bin "
 +        "format-msb=7 "
 +        "sink_0::pool-size=8 "
 +        "src::pool-size=8 "
 +        "sink_0::dcc-2a-file=/opt/imaging/imx219/linear/"
-+        "dcc_2a_1920x1080.bin "
++        "dcc_2a_1640x1232.bin "
 +        "sink_0::device=/run/ti-k3/camera-subdev ! ";
 +
-+  ss << "video/x-raw,format=NV12,width=1920,height=1080,"
-+        "framerate=30/1 ! ";
++  ss << "video/x-raw,format=NV12,width=1640,height=1232,"
++        "framerate=60/1 ! ";
 +
 +  ss << "tiovxmultiscaler target=0 ! ";
 +
-+  ss << "video/x-raw,format=NV12,width=1280,height=720 ! ";
++  ss << "video/x-raw,format=NV12,width=1280,height=720,framerate=60/1 ! ";
 +
 +  ss << "queue max-size-buffers=1 max-size-bytes=0 "
 +        "max-size-time=0 leaky=downstream ! ";
 +
 +  ss << fmt::format(
-+      "v4l2h264enc name=ti_wave5_encoder "
++      "v4l2h264enc name=ti_wave5_encoder output-io-mode=dmabuf-import "
 +      "extra-controls=\"controls,"
 +      "frame_level_rate_control_enable=1,"
 +      "video_bitrate={},"
 +      "video_gop_size={},"
-+      "h264_level=9,"
++      "h264_level=10,"
 +      "h264_profile=0,"
 +      "prepend_sps_and_pps_to_idr=1\" ! ",
 +      bitrate_bps, gop);
 +
-+  ss << "video/x-h264,stream-format=byte-stream,alignment=au ! ";
++  ss << "video/x-h264,stream-format=byte-stream,alignment=au,profile=(string)baseline,level=(string)3.2 ! ";
 +
 +  return ss.str();
 +}
@@ -119,7 +119,7 @@ index 173efb7b..7fe75442 100644
 +      "name": "TI_J722S_IMX219",
 +      "ui_label": "IMX219",
 +      "resolutions": [
-+        {"width": 1280, "height": 720, "fps": 30}
++        {"width": 1280, "height": 720, "fps": 60}
 +      ]
 +    },
      {"key": "X_CAM_TYPE_DISABLED", "id": 255, "name": "DISABLED", "ui_label": "DISABLE"}
