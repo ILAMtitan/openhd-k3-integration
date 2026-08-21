@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+MODE=${OPENHD_IMX708_MODE:-1296p56}
+EXPOSURE=${OPENHD_IMX708_EXPOSURE:-1280}
+ANALOGUE_GAIN=${OPENHD_IMX708_ANALOGUE_GAIN:-512}
+DIGITAL_GAIN=${OPENHD_IMX708_DIGITAL_GAIN:-256}
+
+for cmd in ti-k3-rpmsg-ready ti-k3-configure-imx708-graph v4l2-ctl; do
+  command -v "$cmd" >/dev/null || {
+    echo "Missing required IMX708 dependency: $cmd" >&2
+    exit 1
+  }
+done
+
+for f in \
+  /opt/imaging/imx708/linear/dcc_viss_2304x1296.bin \
+  /opt/imaging/imx708/linear/dcc_2a_2304x1296.bin; do
+  [[ -s "$f" ]] || {
+    echo "Missing IMX708 DCC file: $f" >&2
+    exit 1
+  }
+done
+
+ti-k3-rpmsg-ready
+
+ti-k3-configure-imx708-graph --mode "$MODE"
+
+[[ -e /run/ti-k3/camera-video ]] || {
+  echo "IMX708 camera-video contract missing" >&2
+  exit 1
+}
+[[ -e /run/ti-k3/camera-subdev ]] || {
+  echo "IMX708 camera-subdev contract missing" >&2
+  exit 1
+}
+
+# R1 keeps TI AE/AWB disabled because the deployed TI sensor registry still
+# uses the IMX219 compatibility slot. These manual values are the physically
+# selected indoor checkpoint and are environment-overridable for testing.
+v4l2-ctl -d /run/ti-k3/camera-subdev \
+  --set-ctrl="exposure=${EXPOSURE},analogue_gain=${ANALOGUE_GAIN},digital_gain=${DIGITAL_GAIN}" \
+  >/dev/null
+
+echo "OpenHD IMX708 camera graph ready: mode=$MODE exposure=$EXPOSURE analogue_gain=$ANALOGUE_GAIN digital_gain=$DIGITAL_GAIN"
