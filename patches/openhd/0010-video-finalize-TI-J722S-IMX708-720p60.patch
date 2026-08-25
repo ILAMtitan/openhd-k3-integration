@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Tue, 25 Aug 2026 09:00:00 -0500
+Subject: [PATCH 10/10] video: finalize TI J722S IMX708 at 720p60
+
+Move the native IMX708 path from the hardware-qualified 2304x1296p56 R1
+checkpoint to the intended OpenHD 1280x720p60 output.
+
+Use the driver's 1536x864 binned/cropped sensor mode at a native ~60 fps
+cadence, configured by the accelerator-side graph helper with VBLANK=946.
+VPAC/VISS processes 1536x864 RAW10 at 60 fps, then tiovxmultiscaler produces
+1280x720 NV12 at 60 fps before Wave5 H.264. No software videorate stage is
+required.
+---
+ OpenHD/ohd_video/inc/camera_holder.h       |  4 ++--
+ OpenHD/ohd_video/inc/gst_helper.hpp        | 20 +++++++++++++-------
+ OpenHD/ohd_video/misc/camera_registry.json |  2 +-
+ 3 files changed, 16 insertions(+), 10 deletions(-)
+
+diff --git a/OpenHD/ohd_video/inc/camera_holder.h b/OpenHD/ohd_video/inc/camera_holder.h
+--- a/OpenHD/ohd_video/inc/camera_holder.h
++++ b/OpenHD/ohd_video/inc/camera_holder.h
+@@ -255,10 +255,10 @@ class CameraHolder :
+     }
+     if (m_camera.camera_type == X_CAM_TYPE_TI_J722S_IMX708) {
+-      // Physically qualified clean at MCS2 / 20 MHz. Dynamic Wave5 bitrate
+-      // control is not implemented yet, so retain RF margin by default.
++      // R2 720p60 retains the physically qualified 6 Mbit/s RF margin.
++      // Dynamic Wave5 bitrate control is not implemented yet.
+       ret.h26x_bitrate_kbits = 6000;
+-      ret.h26x_keyframe_interval = 28;
++      ret.h26x_keyframe_interval = 30;
+     }
+     return ret;
+   }
+diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
+--- a/OpenHD/ohd_video/inc/gst_helper.hpp
++++ b/OpenHD/ohd_video/inc/gst_helper.hpp
+@@ -992,7 +992,7 @@ static std::string create_ti_j722s_imx708_stream(
+   const int bitrate_bps =
+       openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
+   const int gop =
+-      settings.h26x_keyframe_interval > 0 ? settings.h26x_keyframe_interval : 28;
++      settings.h26x_keyframe_interval > 0 ? settings.h26x_keyframe_interval : 30;
+ 
+   std::stringstream ss;
+ 
+-  // Hardware-qualified Arducam B0310 / IMX708 CSI0 mode.
++  // R2 Arducam B0310 / IMX708 CSI0 mode: sensor-native ~60 fps cadence.
+   ss << "v4l2src device=/run/ti-k3/camera-video "
+         "io-mode=dmabuf-import do-timestamp=true ! ";
+ 
+   // Noble/GStreamer 1.24 exposes kernel RG10 as rggb10le.
+-  ss << "video/x-bayer,format=rggb10le,width=2304,height=1296,"
+-        "framerate=56/1 ! ";
++  ss << "video/x-bayer,format=rggb10le,width=1536,height=864,"
++        "framerate=60/1 ! ";
+@@ -1011,7 +1011,7 @@ static std::string create_ti_j722s_imx708_stream(
+   ss << "tiovxisp "
+         "sensor-name=SENSOR_SONY_IMX219_RPI "
+         "dcc-isp-file=/opt/imaging/imx708/linear/"
+-        "dcc_viss_2304x1296.bin "
++        "dcc_viss_1536x864.bin "
+         "format-msb=9 "
+         "bypass-cac=true "
+         "bypass-dwb=true "
+         "sink_0::dcc-2a-file=/opt/imaging/imx708/linear/"
+-        "dcc_2a_2304x1296.bin "
++        "dcc_2a_1536x864.bin "
+         "sink_0::device=/run/ti-k3/camera-subdev "
+         "sink_0::ae-mode=AE_MODE_DISABLED "
+         "sink_0::awb-mode=AWB_MODE_DISABLED "
+@@ -1020,8 +1020,14 @@ static std::string create_ti_j722s_imx708_stream(
+         "sink_0::pool-size=4 "
+         "src::pool-size=4 ! ";
+ 
+-  ss << "video/x-raw,format=NV12,width=2304,height=1296,"
+-        "framerate=56/1 ! ";
++  ss << "video/x-raw,format=NV12,width=1536,height=864,"
++        "framerate=60/1 ! ";
++
++  // Keep spatial scaling in TIOVX/VPAC. The sensor already produces the final
++  // 60-fps cadence, so no videorate/drop stage is required.
++  ss << "tiovxmultiscaler target=0 ! ";
++  ss << "video/x-raw,format=NV12,width=1280,height=720,"
++        "framerate=60/1 ! ";
+ 
+   // Bound latency instead of allowing a Wave5 backlog to grow.
+   ss << "queue max-size-buffers=1 max-size-bytes=0 "
+diff --git a/OpenHD/ohd_video/misc/camera_registry.json b/OpenHD/ohd_video/misc/camera_registry.json
+--- a/OpenHD/ohd_video/misc/camera_registry.json
++++ b/OpenHD/ohd_video/misc/camera_registry.json
+@@ -643,7 +643,7 @@
+       "name": "TI_J722S_IMX708",
+       "ui_label": "IMX708",
+       "resolutions": [
+-        {"width": 2304, "height": 1296, "fps": 56}
++        {"width": 1280, "height": 720, "fps": 60}
+       ]
+     },
+-- 
+2.53.0
