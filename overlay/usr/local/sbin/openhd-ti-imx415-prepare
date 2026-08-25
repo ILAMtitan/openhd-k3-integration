@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+MODE=${OPENHD_IMX415_MODE:-full30-r0}
+
+[[ "$MODE" == full30-r0 ]] || {
+  echo "Unsupported OPENHD_IMX415_MODE=$MODE" >&2
+  exit 2
+}
+
+[[ -s /opt/imaging/imx415/linear/dcc_viss_3864x2192.bin ]] || { echo "Missing IMX415 VISS DCC" >&2; exit 1; }
+[[ -s /opt/imaging/imx415/linear/dcc_2a_3864x2192.bin ]] || { echo "Missing IMX415 2A DCC" >&2; exit 1; }
+
+command -v ti-k3-rpmsg-ready >/dev/null
+command -v ti-k3-configure-imx415-graph >/dev/null
+command -v v4l2-ctl >/dev/null
+
+ti-k3-rpmsg-ready
+ti-k3-configure-imx415-graph
+
+[[ -e /run/ti-k3/camera-video ]] || { echo "IMX415 camera-video contract missing" >&2; exit 1; }
+[[ -e /run/ti-k3/camera-subdev ]] || { echo "IMX415 camera-subdev contract missing" >&2; exit 1; }
+[[ -r /run/ti-k3/camera.env ]] || { echo "IMX415 camera.env contract missing" >&2; exit 1; }
+
+grep -Fq 'TI_K3_CAMERA_DETECTED_SENSOR=imx415' /run/ti-k3/camera.env || {
+  echo "camera.env is not IMX415" >&2
+  exit 1
+}
+
+# R0 deliberately does not invent a manual exposure/gain preset. If supplied
+# after live qualification, apply those V4L2 controls here.
+ctrls=()
+[[ -n ${OPENHD_IMX415_EXPOSURE:-} ]] && ctrls+=("exposure=$OPENHD_IMX415_EXPOSURE")
+[[ -n ${OPENHD_IMX415_ANALOGUE_GAIN:-} ]] && ctrls+=("analogue_gain=$OPENHD_IMX415_ANALOGUE_GAIN")
+if (( ${#ctrls[@]} )); then
+  IFS=,; value="${ctrls[*]}"; unset IFS
+  v4l2-ctl -d /run/ti-k3/camera-subdev --set-ctrl="$value"
+fi
+
+echo "OpenHD IMX415 camera graph ready (R0 on camera R2 base)."
