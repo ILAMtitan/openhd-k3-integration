@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Tue, 25 Aug 2026 10:00:00 -0500
+Subject: [PATCH 11/11] video: prepare native TI J722S IMX415 pipeline
+
+Layer the pre-hardware Arducam B0569 / Sony IMX415 path on top of the finalized
+IMX708 720p60 R2 checkpoint. Existing IMX219 type 150 and IMX708 type 151 are
+left intact; IMX415 is type 152.
+
+Capture the full 3864x2192 GBRG10 sensor frame at nominal 30 fps, process it
+through VPAC/VISS, scale to 1280x720 with the TI multiscaler, and encode H.264
+with Wave5. R0 keeps AE/AWB disabled and uses DCC slot 219 only as a registry
+compatibility mechanism.
+---
+ OpenHD/ohd_video/inc/camera_holder.h       |  6 +++
+ OpenHD/ohd_video/inc/gst_helper.hpp        | 68 ++++++++++++++++++++++++++++++
+ OpenHD/ohd_video/misc/camera_registry.json | 12 +++++-
+ OpenHD/ohd_video/src/gstreamerstream.cpp   |  4 ++
+ 4 files changed, 89 insertions(+), 1 deletion(-)
+
+diff --git a/OpenHD/ohd_video/inc/camera_holder.h b/OpenHD/ohd_video/inc/camera_holder.h
+--- a/OpenHD/ohd_video/inc/camera_holder.h
++++ b/OpenHD/ohd_video/inc/camera_holder.h
+@@ -261,6 +261,12 @@ class CameraHolder :
+       ret.h26x_bitrate_kbits = 6000;
+       ret.h26x_keyframe_interval = 30;
+     }
++    if (m_camera.camera_type == X_CAM_TYPE_TI_J722S_IMX415) {
++      // R0 starts at the physically clean TI RF baseline. IMX415 itself is
++      // not hardware-qualified yet.
++      ret.h26x_bitrate_kbits = 6000;
++      ret.h26x_keyframe_interval = 15;
++    }
+     return ret;
+   }
+ };
+diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
+--- a/OpenHD/ohd_video/inc/gst_helper.hpp
++++ b/OpenHD/ohd_video/inc/gst_helper.hpp
+@@ -1057,6 +1057,74 @@ static std::string create_ti_j722s_imx708_stream(
+   return ss.str();
+ }
+ 
++static std::string create_ti_j722s_imx415_stream(
++    const CameraSettings& settings) {
++  const int bitrate_bps =
++      openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
++  const int gop =
++      settings.h26x_keyframe_interval > 0 ? settings.h26x_keyframe_interval : 15;
++
++  std::stringstream ss;
++
++  ss << "v4l2src device=/run/ti-k3/camera-video "
++        "io-mode=dmabuf-import do-timestamp=true ! ";
++
++  // The Beagle 6.12.49 IMX415 driver exposes full-array GBRG RAW10 only.
++  ss << "video/x-bayer,format=gbrg10le,width=3864,height=2192,"
++        "framerate=30/1 ! ";
++
++  // The qualified TI compatibility core maps gbrg10le to the same 16-bit raw
++  // container as the legacy gbrg10 spelling; capssetter changes metadata only.
++  ss << "capssetter caps=\"video/x-bayer,format=gbrg10\" "
++        "join=true replace=false ! ";
++
++  // R0 uses registry/DCC slot 219 only for compatibility. Do not enable TI
++  // AE/AWB until native IMX415 exposure/gain mapping exists.
++  ss << "tiovxisp "
++        "sensor-name=SENSOR_SONY_IMX219_RPI "
++        "dcc-isp-file=/opt/imaging/imx415/linear/"
++        "dcc_viss_3864x2192.bin "
++        "format-msb=9 "
++        "bypass-cac=true "
++        "bypass-dwb=true "
++        "sink_0::dcc-2a-file=/opt/imaging/imx415/linear/"
++        "dcc_2a_3864x2192.bin "
++        "sink_0::device=/run/ti-k3/camera-subdev "
++        "sink_0::ae-mode=AE_MODE_DISABLED "
++        "sink_0::awb-mode=AWB_MODE_DISABLED "
++        "sink_0::pool-size=4 "
++        "src::pool-size=4 ! ";
++
++  ss << "video/x-raw,format=NV12,width=3864,height=2192,"
++        "framerate=30/1 ! ";
++
++  // Initial FPV output is 720p30. A later qualification can use a centered
++  // 3840x2160 ROI before scaling if required.
++  ss << "tiovxmultiscaler target=0 ! ";
++  ss << "video/x-raw,format=NV12,width=1280,height=720,framerate=30/1 ! ";
++
++  ss << "queue max-size-buffers=1 max-size-bytes=0 "
++        "max-size-time=0 leaky=downstream ! ";
++
++  ss << fmt::format(
++      "v4l2h264enc name=ti_wave5_encoder "
++      "extra-controls=\"controls,"
++      "frame_level_rate_control_enable=1,"
++      "video_bitrate={},"
++      "video_gop_size={},"
++      "prepend_sps_and_pps_to_idr=1\" ! ",
++      bitrate_bps, gop);
++
++  ss << "video/x-h264,stream-format=byte-stream,alignment=au ! ";
++
++  return ss.str();
++}
++
+ static std::string create_input_custom_udp_rtp_port(
+     const CameraSettings& settings) {
+   static constexpr auto input_port = 5500;
+diff --git a/OpenHD/ohd_video/misc/camera_registry.json b/OpenHD/ohd_video/misc/camera_registry.json
+--- a/OpenHD/ohd_video/misc/camera_registry.json
++++ b/OpenHD/ohd_video/misc/camera_registry.json
+@@ -646,6 +646,15 @@
+         {"width": 1280, "height": 720, "fps": 60}
+       ]
+     },
++    {
++      "key": "X_CAM_TYPE_TI_J722S_IMX415",
++      "id": 152,
++      "name": "TI_J722S_IMX415",
++      "ui_label": "IMX415",
++      "resolutions": [
++        {"width": 1280, "height": 720, "fps": 30}
++      ]
++    },
+     {"key": "X_CAM_TYPE_DISABLED", "id": 255, "name": "DISABLED", "ui_label": "DISABLE"}
+   ],
+   "manufacturer_groups": [
+@@ -813,8 +822,9 @@
+       "key": "TI_J722S",
+       "name": "Texas Instruments",
+       "cameras": [
+         "X_CAM_TYPE_TI_J722S_IMX219",
+-        "X_CAM_TYPE_TI_J722S_IMX708"
++        "X_CAM_TYPE_TI_J722S_IMX708",
++        "X_CAM_TYPE_TI_J722S_IMX415"
+       ]
+     },
+     {
+diff --git a/OpenHD/ohd_video/src/gstreamerstream.cpp b/OpenHD/ohd_video/src/gstreamerstream.cpp
+--- a/OpenHD/ohd_video/src/gstreamerstream.cpp
++++ b/OpenHD/ohd_video/src/gstreamerstream.cpp
+@@ -197,6 +197,10 @@ std::string GStreamerStream::create_source_encode_pipeline(
+     if (camera.camera_type == X_CAM_TYPE_TI_J722S_IMX708) {
+       pipeline << OHDGstHelper::create_ti_j722s_imx708_stream(setting);
++    } else if (camera.camera_type == X_CAM_TYPE_TI_J722S_IMX415) {
++      pipeline << OHDGstHelper::create_ti_j722s_imx415_stream(setting);
+     } else {
+       pipeline << OHDGstHelper::create_ti_j722s_imx219_stream(setting);
+     }
+-- 
+2.53.0
