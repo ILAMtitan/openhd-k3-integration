@@ -1,11 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ILAMtitan <bbasile@gmail.com>
-Date: Tue, 25 Aug 2026 10:00:00 -0500
-Subject: [PATCH 11/11] video: prepare native TI J722S IMX415 pipeline
+Date: Wed, 26 Aug 2026 10:45:00 -0500
+Subject: [PATCH 12/12] video: prepare native TI J722S IMX415 pipeline
 
-Layer the pre-hardware Arducam B0569 / Sony IMX415 path on top of the finalized
-IMX708 720p60 R2 checkpoint. Existing IMX219 type 150 and IMX708 type 151 are
-left intact; IMX415 is type 152.
+Layer the pre-hardware Arducam B0569 / Sony IMX415 path on top of the final
+RF-qualified IMX708 720p60 checkpoint. Existing IMX219 type 150 and IMX708
+type 151 are left intact; IMX415 is type 152.
 
 Capture the full 3864x2192 GBRG10 sensor frame at nominal 30 fps, process it
 through VPAC/VISS, scale to 1280x720 with the TI multiscaler, and encode H.264
@@ -37,7 +37,7 @@ diff --git a/OpenHD/ohd_video/inc/camera_holder.h b/OpenHD/ohd_video/inc/camera_
 diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
 --- a/OpenHD/ohd_video/inc/gst_helper.hpp
 +++ b/OpenHD/ohd_video/inc/gst_helper.hpp
-@@ -1057,6 +1057,74 @@ static std::string create_ti_j722s_imx708_stream(
+@@ -1059,6 +1059,74 @@ static std::string create_ti_j722s_imx708_stream(
    return ss.str();
  }
  

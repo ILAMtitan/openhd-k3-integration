@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Wed, 26 Aug 2026 10:30:00 -0500
+Subject: [PATCH 11/11] video: qualify TI J722S IMX708 720p60 RF path
+
+Freeze the final hardware-qualified IMX708 settings after end-to-end OpenHD
+RF validation on BeagleY-AI / J722S.
+
+Reduce the TIOVX VISS pools from 4/4 to 2/2, which reduced the shared TIOVX
+allocation footprint without affecting 60 fps operation. Force the Wave5
+output caps to the negotiated 1280x720p60 Baseline Level 3.2 stream that
+avoids the invalid Level-1 negotiation observed during qualification.
+
+The R3 consumer source tree already carries the qualified 64-buffer OpenHD
+appsink behavior. Patch 0009 is therefore applied without its
+gstreamerstream.cpp hunk; this patch adds only the IMX708-vs-IMX219 source
+dispatch while preserving the existing appsink implementation.
+---
+ OpenHD/ohd_video/inc/gst_helper.hpp      | 10 ++++++----
+ OpenHD/ohd_video/src/gstreamerstream.cpp |  6 +++++-
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
+--- a/OpenHD/ohd_video/inc/gst_helper.hpp
++++ b/OpenHD/ohd_video/inc/gst_helper.hpp
+@@ -1025,8 +1025,8 @@ static std::string create_ti_j722s_imx708_stream(
+         "sink_0::device=/run/ti-k3/camera-subdev "
+         "sink_0::ae-mode=AE_MODE_DISABLED "
+         "sink_0::awb-mode=AWB_MODE_DISABLED "
+-        "sink_0::pool-size=4 "
+-        "src::pool-size=4 ! ";
++        "sink_0::pool-size=2 "
++        "src::pool-size=2 ! ";
+ 
+   ss << "video/x-raw,format=NV12,width=1536,height=864,"
+         "framerate=60/1 ! ";
+@@ -1051,7 +1051,9 @@ static std::string create_ti_j722s_imx708_stream(
+       "prepend_sps_and_pps_to_idr=1\" ! ",
+       bitrate_bps, gop);
+ 
+-  ss << "video/x-h264,stream-format=byte-stream,alignment=au ! ";
++  ss << "video/x-h264,width=1280,height=720,framerate=60/1,"
++        "profile=(string)baseline,level=(string)3.2,"
++        "stream-format=(string)byte-stream,alignment=(string)au ! ";
+ 
+   return ss.str();
+ }
+diff --git a/OpenHD/ohd_video/src/gstreamerstream.cpp b/OpenHD/ohd_video/src/gstreamerstream.cpp
+--- a/OpenHD/ohd_video/src/gstreamerstream.cpp
++++ b/OpenHD/ohd_video/src/gstreamerstream.cpp
+@@ -194,7 +194,11 @@ std::string GStreamerStream::create_source_encode_pipeline(
+   } else if (camera.requires_ti_j722s_pipeline()) {
+     openhd::log::get_default()->debug(
+         "Camera requires TI J722S native pipeline.");
+-    pipeline << OHDGstHelper::create_ti_j722s_imx219_stream(setting);
++    if (camera.camera_type == X_CAM_TYPE_TI_J722S_IMX708) {
++      pipeline << OHDGstHelper::create_ti_j722s_imx708_stream(setting);
++    } else {
++      pipeline << OHDGstHelper::create_ti_j722s_imx219_stream(setting);
++    }
+   } else if (is_usb_camera(camera.camera_type)) {
+     openhd::log::get_default()->warn("Detected USB camera.");
+     const auto v4l2_device_name =
+-- 
+2.53.0
