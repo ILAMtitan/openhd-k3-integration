@@ -39,7 +39,7 @@ grep -Fq 'ret.h26x_keyframe_interval = 15;' "$patch12"
 
 # Reproducible combined apply path must preserve qualified R3 appsink and CMA fix.
 grep -Fq "BASE_SRC=\${BASE_SRC:-/var/tmp/openhd-k3-consumer-build/OpenHD}" "$apply"
-grep -Fq "--exclude='OpenHD/ohd_video/src/gstreamerstream.cpp'" "$apply"
+grep -Fq -- "--exclude='OpenHD/ohd_video/src/gstreamerstream.cpp'" "$apply"
 grep -Fq '0011-video-qualify-TI-J722S-IMX708-720p60.patch' "$apply"
 grep -Fq '0012-video-add-native-TI-J722S-IMX415-pipeline.patch' "$apply"
 grep -Fq 'GST_OVERRIDE=/opt/ti-k3/gstreamer-overrides/gstreamer-1.0/libgstvideo4linux2.so' "$apply"
