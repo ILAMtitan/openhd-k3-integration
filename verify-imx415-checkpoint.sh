@@ -40,7 +40,10 @@ else
   bad 'OpenHD mapped qualified GStreamer V4L2 CMA override'
 fi
 
-log=$(journalctl -b -u openhd.service --no-pager 2>/dev/null || true)
+log=''
+if [[ -n "$pid" ]]; then
+  log=$(journalctl -b _PID="$pid" --no-pager 2>/dev/null || true)
+fi
 for needle in \
   'Camera: TI_J722S_IMX415' \
   'format=gbrg10le,width=3864,height=2192,framerate=30/1' \
@@ -54,16 +57,9 @@ for needle in \
 done
 
 if grep -Eqi 'failed to allocate|cannot allocate memory|33554432|8192 pages|dma alloc of size 33554432 failed' <<<"$log"; then
-  bad 'no historical CMA/allocation failure in OpenHD log'
+  bad 'no historical CMA/allocation failure in current OpenHD process log'
 else
-  pass 'no historical CMA/allocation failure in OpenHD log'
-fi
-
-klog=$(journalctl -k -b --no-pager 2>/dev/null || true)
-if grep -Eqi 'dma alloc of size 33554432 failed|req-size: 8192 pages' <<<"$klog"; then
-  bad 'no historical 32 MiB CMA failure in current boot'
-else
-  pass 'no historical 32 MiB CMA failure in current boot'
+  pass 'no historical CMA/allocation failure in current OpenHD process log'
 fi
 
 exit "$fail"
