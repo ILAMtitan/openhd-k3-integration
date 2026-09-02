@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CAMERA_ENV=${OPENHD_TI_CAMERA_ENV:-/run/ti-k3/camera.env}
+SELECT_ENV=${OPENHD_TI_CAMERA_SELECTION_ENV:-/etc/ti-k3/camera.conf}
+SYSUTILS_CONFIG=${OPENHD_SYSUTILS_CONFIG:-/usr/local/share/OpenHD/SysUtils/config.json}
+OPENHD_CAMERA_SETTINGS=${OPENHD_CAMERA_SETTINGS:-/usr/local/share/openhd/video/air_camera_generic.json}
+
+[[ -r "$CAMERA_ENV" ]] || {
+  echo "TI K3 camera contract is unavailable: $CAMERA_ENV" >&2
+  exit 1
+}
+source "$CAMERA_ENV"
+
+detected=${TI_K3_CAMERA_DETECTED_SENSOR:-}
+case "$detected" in
+  imx219) camera_type=150 ;;
+  imx708) camera_type=151 ;;
+  imx415) camera_type=152 ;;
+  *) echo "Unsupported TI K3 camera sensor: ${detected:-none}" >&2; exit 1 ;;
+esac
+
+if [[ -r "$SELECT_ENV" ]]; then
+  selected=$(sed -n 's/^TI_K3_CAMERA_SELECTED=//p' "$SELECT_ENV" | tail -n1)
+  if [[ -n "$selected" && "$selected" != "$detected" ]]; then
+    echo "Camera selection mismatch: configured=$selected detected=$detected" >&2
+    echo 'Run openhd-camera-select for the desired sensor and reboot.' >&2
+    exit 1
+  fi
+fi
+
+[[ -e ${TI_K3_CAMERA_VIDEO_DEVICE:-/run/ti-k3/camera-video} ]] || {
+  echo 'TI K3 camera-video contract is missing' >&2
+  exit 1
+}
+[[ -e ${TI_K3_CAMERA_SUBDEV_DEVICE:-/run/ti-k3/camera-subdev} ]] || {
+  echo 'TI K3 camera-subdev contract is missing' >&2
+  exit 1
+}
+
+case "$detected" in
+  imx708)
+    [[ ${TI_K3_CAMERA_MODE:-} == 864p60 ]] || {
+      echo "IMX708 must be prepared in 864p60 mode (found ${TI_K3_CAMERA_MODE:-none})" >&2
+      exit 1
+    }
+    exposure=${OPENHD_IMX708_EXPOSURE:-1280}
+    analogue_gain=${OPENHD_IMX708_ANALOGUE_GAIN:-512}
+    digital_gain=${OPENHD_IMX708_DIGITAL_GAIN:-256}
+    v4l2-ctl -d /run/ti-k3/camera-subdev \
+      --set-ctrl="exposure=${exposure},analogue_gain=${analogue_gain},digital_gain=${digital_gain}" \
+      >/dev/null
+    ;;
+  imx415)
+    ctrls=()
+    [[ -n ${OPENHD_IMX415_EXPOSURE:-} ]] && ctrls+=("exposure=$OPENHD_IMX415_EXPOSURE")
+    [[ -n ${OPENHD_IMX415_ANALOGUE_GAIN:-} ]] && ctrls+=("analogue_gain=$OPENHD_IMX415_ANALOGUE_GAIN")
+    if (( ${#ctrls[@]} )); then
+      IFS=,; value="${ctrls[*]}"; unset IFS
+      v4l2-ctl -d /run/ti-k3/camera-subdev --set-ctrl="$value" >/dev/null
+    fi
+    ;;
+esac
+
+python3 - "$SYSUTILS_CONFIG" "$OPENHD_CAMERA_SETTINGS" "$camera_type" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+sysutils_path = Path(sys.argv[1])
+settings_path = Path(sys.argv[2])
+camera_type = int(sys.argv[3])
+
+
+def atomic_json(path: Path, data: dict, mode: int = 0o644) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".camera-sync.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+if sysutils_path.exists():
+    try:
+        sysutils = json.loads(sysutils_path.read_text())
+    except Exception as exc:
+        raise SystemExit(f"Invalid SysUtils config {sysutils_path}: {exc}")
+    sys_mode = sysutils_path.stat().st_mode & 0o7777
+else:
+    sysutils = {}
+    sys_mode = 0o644
+sysutils["camera_type"] = camera_type
+atomic_json(sysutils_path, sysutils, sys_mode)
+
+if settings_path.exists():
+    try:
+        settings = json.loads(settings_path.read_text())
+    except Exception as exc:
+        raise SystemExit(f"Invalid OpenHD camera settings {settings_path}: {exc}")
+    settings_mode = settings_path.stat().st_mode & 0o7777
+else:
+    settings = {
+        "switch_primary_and_secondary": False,
+        "dualcam_primary_video_allocated_bandwidth_perc": 60,
+        "primary_camera_type": camera_type,
+        "secondary_camera_type": 255,
+        "enable_audio": 1,
+    }
+    settings_mode = 0o644
+
+settings["primary_camera_type"] = camera_type
+settings["secondary_camera_type"] = 255
+atomic_json(settings_path, settings, settings_mode)
+PY
+
+printf 'OpenHD TI camera ready: sensor=%s camera_type=%s mode=%s\n' \
+  "$detected" "$camera_type" "${TI_K3_CAMERA_MODE:-default}"

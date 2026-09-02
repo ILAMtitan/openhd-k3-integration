@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+command -v ti-k3-camera-select >/dev/null || {
+  echo 'ti-k3-camera-select is not installed; install the R4 ti-k3-accelerators layer first.' >&2
+  exit 1
+}
+exec ti-k3-camera-select "$@"
