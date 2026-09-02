@@ -1,0 +1,8 @@
+date=2026-09-02T15:56:30+00:00
+hostname=OpenHD-AIR
+kernel=6.12.49-vendor-k3-beagle
+arch=aarch64
+sensor_runtime=suspended
+openhd_state=inactive
+openhd_pid=0
+openhd_exec={ path=/usr/local/bin/openhd-native-imx415-full-appsink256-nodrop ; argv[]=/usr/local/bin/openhd-native-imx415-full-appsink256-nodrop $OPENHD_ARGS ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }

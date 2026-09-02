@@ -1,0 +1,932 @@
+diff --git a/OpenHD/ohd_common/inc/openhd_platform.h b/OpenHD/ohd_common/inc/openhd_platform.h
+index 07a60ea9..c1d0d097 100644
+--- a/OpenHD/ohd_common/inc/openhd_platform.h
++++ b/OpenHD/ohd_common/inc/openhd_platform.h
+@@ -74,6 +74,10 @@ static constexpr int X_PLATFORM_TYPE_QUALCOMM_QCS405 = 47;
+ // Numbers 61..65 are reserved for NXP
+ static constexpr int X_PLATFORM_TYPE_NXP_IMX8 = 61;
+ 
++// Numbers 70..79 are reserved for Texas Instruments platforms.
++// BeagleY-AI uses the AM67A/J722S application processor.
++static constexpr int X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI = 70;
++
+ // Numbers 51..60 are reserved for Enterprise Customers
+ static constexpr int X_PLATFORM_TYPE_ORQA = 51;
+ static constexpr int X_PLATFORM_TYPE_UVX_MOD = 52;
+@@ -111,6 +115,8 @@ struct OHDPlatform {
+   bool is_uvx_mod() const;
+   // Luckfox Pico
+   bool is_luckfox_pico() const;
++  // Texas Instruments AM67A/J722S
++  bool is_beagley_ai() const;
+ };
+ 
+ // We need to differentiate between rpi 4 and other pi's to use the right fec
+diff --git a/OpenHD/ohd_common/src/openhd_platform.cpp b/OpenHD/ohd_common/src/openhd_platform.cpp
+index be0464c3..1dd6e3a2 100644
+--- a/OpenHD/ohd_common/src/openhd_platform.cpp
++++ b/OpenHD/ohd_common/src/openhd_platform.cpp
+@@ -125,6 +125,8 @@ std::string x_platform_type_to_string(int platform_type) {
+       return "QUALCOMM_QRB5165";
+     case X_PLATFORM_TYPE_NXP_IMX8:
+       return "NXP_IMX8";
++    case X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI:
++      return "BEAGLEY-AI (AM67A)";
+     default:
+       std::stringstream ss;
+       ss << "ERR-UNDEFINED{" << platform_type << "}";
+@@ -168,6 +170,10 @@ int get_fec_max_block_size_for_platform() {
+     return 50;
+   }
+ 
++  if (platform_type == X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI) {
++    return 30;
++  }
++
+   return 20;
+ }
+ 
+@@ -237,6 +243,10 @@ bool OHDPlatform::is_qrb5165() const {
+   return platform_type == X_PLATFORM_TYPE_QUALCOMM_QRB5165;
+ }
+ 
++bool OHDPlatform::is_beagley_ai() const {
++  return platform_type == X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI;
++}
++
+ bool OHDPlatform::is_luckfox_pico() const {
+   return platform_type == X_PLATFORM_TYPE_LUCKFOX_RV110X;
+ }
+\ No newline at end of file
+diff --git a/OpenHD/ohd_interface/inc/wifi_card.h b/OpenHD/ohd_interface/inc/wifi_card.h
+index 67ed4cb8..3e8bff25 100644
+--- a/OpenHD/ohd_interface/inc/wifi_card.h
++++ b/OpenHD/ohd_interface/inc/wifi_card.h
+@@ -188,6 +188,7 @@ struct WiFiCard {
+   // proper driver)
+   [[nodiscard]] bool supports_openhd_wifibroadcast() const {
+     return type == WiFiCardType::OPENHD_RTL_88X2AU ||
++           type == WiFiCardType::RTL_88X2AU ||
+            type == WiFiCardType::OPENHD_RTL_88X2BU ||
+            type == WiFiCardType::OPENHD_RTL_88X2CU ||
+            type == WiFiCardType::OPENHD_RTL_88X2EU ||
+@@ -218,6 +219,7 @@ struct WiFiCard {
+ static bool wifi_card_supports_variable_mcs(const WiFiCard& wifi_card) {
+   if (wifi_card.type == WiFiCardType::OPENHD_EMULATED) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2AU) return true;
++  if (wifi_card.type == WiFiCardType::RTL_88X2AU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2BU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2CU) return true;
+   if (wifi_card.type == WiFiCardType::OPENHD_RTL_88X2EU) return true;
+diff --git a/OpenHD/ohd_interface/inc/wifi_hotspot.h b/OpenHD/ohd_interface/inc/wifi_hotspot.h
+index 35d10604..7725dd54 100644
+--- a/OpenHD/ohd_interface/inc/wifi_hotspot.h
++++ b/OpenHD/ohd_interface/inc/wifi_hotspot.h
+@@ -81,6 +81,7 @@ class WifiHotspot {
+   const OHDProfile m_profile;
+   const WiFiCard m_wifi_card;
+   bool started = false;
++  bool m_connection_ready = false;
+   std::shared_ptr<spdlog::logger> m_console;
+   bool m_use_5G_channel;
+   bool m_is_enabled = false;
+diff --git a/OpenHD/ohd_interface/src/wifi_command_helper.cpp b/OpenHD/ohd_interface/src/wifi_command_helper.cpp
+index 171b0b67..efbdd894 100644
+--- a/OpenHD/ohd_interface/src/wifi_command_helper.cpp
++++ b/OpenHD/ohd_interface/src/wifi_command_helper.cpp
+@@ -209,6 +209,14 @@ bool wifi::commandhelper::nmcli_set_device_managed_status(
+     const std::string &device, bool managed) {
+   get_logger()->info("nmcli_set_device_managed_status {} managed:{}", device,
+                      managed);
++  if (!OHDFilesystemUtil::exists("/usr/bin/nmcli") &&
++      !OHDFilesystemUtil::exists("/bin/nmcli")) {
++    get_logger()->debug(
++        "nmcli is unavailable; management state for {} is handled by the "
++        "system network configuration",
++        device);
++    return true;
++  }
+   std::vector<std::string> arguments{"device", "set", device, "managed"};
+   if (managed) {
+     arguments.emplace_back("yes");
+@@ -229,8 +237,15 @@ static std::string float_without_trailing_zeroes(const float value) {
+ // detection) Example not supported freq : 5885 MHz [177] (disabled)
+ static bool iw_info_line_contains_freq_and_is_supported(
+     const std::string &line, const uint32_t freq_mhz) {
+-  return OHDUtil::contains(line, fmt::format("{} MHz", freq_mhz)) &&
+-         !OHDUtil::contains(line, "disabled");
++  // iw versions and drivers differ in whether they print frequencies as
++  // "5745 MHz" or "5745.0 MHz". Accept both forms.
++  const auto integer_form = fmt::format("{} MHz", freq_mhz);
++  const auto decimal_form = fmt::format("{}.0 MHz", freq_mhz);
++  const bool frequency_matches =
++      OHDUtil::contains(line, integer_form) ||
++      OHDUtil::contains(line, decimal_form);
++
++  return frequency_matches && !OHDUtil::contains(line, "disabled");
+ }
+ static bool iw_info_supports_frequency(const std::vector<std::string> &lines,
+                                        const uint32_t freq_mhz) {
+diff --git a/OpenHD/ohd_interface/src/wifi_hotspot.cpp b/OpenHD/ohd_interface/src/wifi_hotspot.cpp
+index 22c8d288..1678c92e 100644
+--- a/OpenHD/ohd_interface/src/wifi_hotspot.cpp
++++ b/OpenHD/ohd_interface/src/wifi_hotspot.cpp
+@@ -29,6 +29,7 @@
+ #include "openhd_naming.h"
+ #include "openhd_spdlog.h"
+ #include "openhd_util_async.h"
++#include "openhd_util_filesystem.h"
+ 
+ static constexpr auto OHD_WIFI_HOTSPOT_CONNECTION_NAME = "ohd_wifi_hotspot";
+ const std::string blue = "\033[34m";
+@@ -39,6 +40,14 @@ static std::string get_ohd_wifi_hotspot_connection_nm_filename() {
+                      OHD_WIFI_HOTSPOT_CONNECTION_NAME);
+ }
+ 
++static bool network_manager_available() {
++  if (!OHDFilesystemUtil::exists("/usr/bin/nmcli") &&
++      !OHDFilesystemUtil::exists("/bin/nmcli")) {
++    return false;
++  }
++  return OHDUtil::run_command("nmcli", {"general", "status"}, false) == 0;
++}
++
+ static std::string resolve_hotspot_ssid(bool is_air,
+                                         const std::string& override_ssid) {
+   if (override_ssid.empty()) {
+@@ -71,6 +80,11 @@ static std::string resolve_hotspot_password(
+ static bool create_hotspot_connection_file(
+     const WiFiCard& card, const bool is_air, const bool use_5g_channel,
+     const std::string& ssid_override, const std::string& password_override) {
++  if (!network_manager_available()) {
++    openhd::log::get_default()->info(
++        "WiFi hotspot disabled: NetworkManager/nmcli is unavailable");
++    return false;
++  }
+   // delete any previous connection that might exist. This might fail if no
+   // connection of that name exists - aka an error here can be ignored. We
+   // re-create it just to be sure, since for example, the wifi card might have
+@@ -83,26 +97,32 @@ static bool create_hotspot_connection_file(
+   // and create the hotspot one
+   const auto ssid = resolve_hotspot_ssid(is_air, ssid_override);
+   const auto password = resolve_hotspot_password(password_override);
+-  OHDUtil::run_command(
++  bool success = OHDUtil::run_command(
+       "nmcli", {"con add type wifi ifname", card.device_name, "con-name",
+                 OHD_WIFI_HOTSPOT_CONNECTION_NAME, "autoconnect no",
+-                fmt::format("ssid {}", ssid)});
+-  OHDUtil::run_command("nmcli",
++                fmt::format("ssid {}", ssid)}) == 0;
++  success =
++      (OHDUtil::run_command("nmcli",
+                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+                         " 802-11-wireless.mode ap", "802-11-wireless.band",
+-                        use_5g_channel ? "a" : "bg", "ipv4.method shared"});
+-  OHDUtil::run_command("nmcli",
++                        use_5g_channel ? "a" : "bg", "ipv4.method shared"}) ==
++       0) && success;
++  success = (OHDUtil::run_command("nmcli",
+                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+-                        " wifi-sec.key-mgmt wpa-psk"});
+-  OHDUtil::run_command("nmcli",
++                        " wifi-sec.key-mgmt wpa-psk"}) == 0) && success;
++  success = (OHDUtil::run_command("nmcli",
+                        {"con modify ", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+-                        fmt::format(" wifi-sec.psk \"{}\"", password)});
+-  OHDUtil::run_command("nmcli", {"con modify", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
+-                                 "ipv4.addresses 192.168.3.1/24"});
+-  return true;
++                        fmt::format(" wifi-sec.psk \"{}\"", password)}) == 0) &&
++            success;
++  success = (OHDUtil::run_command(
++                 "nmcli", {"con modify", OHD_WIFI_HOTSPOT_CONNECTION_NAME,
++                            "ipv4.addresses 192.168.3.1/24"}) == 0) &&
++            success;
++  return success;
+ }
+ 
+ bool WifiHotspot::util_delete_nm_file() {
++  if (!network_manager_available()) return false;
+   // cleanup - proper stop of openhd, do not leave any traces behind.
+   if (OHDFilesystemUtil::exists(
+           get_ohd_wifi_hotspot_connection_nm_filename())) {
+@@ -127,9 +147,9 @@ WifiHotspot::WifiHotspot(OHDProfile profile, WiFiCard wifiCard,
+   // create the connection (no matter if hotspot is enabled) such that we can
+   // just enable / disable it by running connection up / down.
+   m_console->debug("begin create hotspot connection");
+-  create_hotspot_connection_file(m_wifi_card, m_profile.is_air,
+-                                 m_use_5G_channel, m_hotspot_ssid_override,
+-                                 m_hotspot_password_override);
++  m_connection_ready = create_hotspot_connection_file(
++      m_wifi_card, m_profile.is_air, m_use_5G_channel,
++      m_hotspot_ssid_override, m_hotspot_password_override);
+   m_console->debug("end create hotspot connection");
+ }
+ 
+@@ -137,9 +157,18 @@ WifiHotspot::~WifiHotspot() { util_delete_nm_file(); }
+ 
+ void WifiHotspot::start() {
+   m_console->debug("Starting WIFI hotspot on card {}", m_wifi_card.device_name);
++  if (!m_connection_ready) {
++    m_console->info(
++        "WiFi hotspot remains disabled because NetworkManager setup was not "
++        "available");
++    return;
++  }
+   const auto args =
+       std::vector<std::string>{"con", "up", OHD_WIFI_HOTSPOT_CONNECTION_NAME};
+-  OHDUtil::run_command("nmcli", args);
++  if (OHDUtil::run_command("nmcli", args) != 0) {
++    m_console->error("Failed to start WiFi hotspot");
++    return;
++  }
+   started = true;
+   m_console->info("Wifi hotspot started");
+   std::cout << blue << "Started WIFI hotspot on card "
+@@ -151,7 +180,10 @@ void WifiHotspot::stop() {
+   if (!started) return;
+   const auto args =
+       std::vector<std::string>{"con", "down", OHD_WIFI_HOTSPOT_CONNECTION_NAME};
+-  OHDUtil::run_command("nmcli", args);
++  if (OHDUtil::run_command("nmcli", args) != 0) {
++    m_console->warn("Failed to stop WiFi hotspot");
++  }
++  started = false;
+   m_console->info("Wifi hotspot stopped");
+ }
+ 
+diff --git a/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h b/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
+index edf12932..d60ce880 100644
+--- a/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
++++ b/OpenHD/ohd_telemetry/src/AirTelemetrySettings.h
+@@ -100,8 +100,14 @@ class SettingsHolder : public openhd::PersistentSettings<Settings> {
+   }
+   [[nodiscard]] Settings create_default() const override {
+     Settings ret{};
+-    // Default telemetry serial (for this platform)
+-    ret.fc_uart_connection_type = "DEFAULT";
++    // ttyS2 is the BeagleY-AI Linux console. Do not claim a default FC UART on
++    // this platform; an explicit safe UART can still be selected later.
++    if (OHDPlatform::instance().is_beagley_ai()) {
++      ret.fc_uart_connection_type = UART_CONNECTION_TYPE_DISABLE;
++    } else {
++      // Default telemetry serial for platforms with a known safe mapping.
++      ret.fc_uart_connection_type = "DEFAULT";
++    }
+     return ret;
+   }
+   std::optional<Settings> impl_deserialize(
+diff --git a/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp b/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
+index 625d6f74..b331ffd4 100644
+--- a/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
++++ b/OpenHD/ohd_telemetry/src/endpoints/SerialEndpoint.cpp
+@@ -40,6 +40,121 @@
+ #include "openhd_util_filesystem.h"
+ 
+ static std::string GET_ERROR() { return {strerror(errno)}; }
++
++static std::optional<std::string> read_small_text_file(
++    const std::string& filename) {
++  const int fd = open(filename.c_str(), O_RDONLY | O_CLOEXEC);
++  if (fd == -1) {
++    return std::nullopt;
++  }
++  std::string result;
++  char buffer[1024];
++  while (result.size() < 16384) {
++    const auto count = read(fd, buffer, sizeof(buffer));
++    if (count == 0) {
++      break;
++    }
++    if (count < 0) {
++      close(fd);
++      return std::nullopt;
++    }
++    result.append(buffer, static_cast<std::size_t>(count));
++  }
++  close(fd);
++  return result;
++}
++
++static std::string serial_device_basename(const std::string& device) {
++  const auto slash = device.find_last_of('/');
++  return slash == std::string::npos ? device : device.substr(slash + 1);
++}
++
++static bool same_character_device(const std::string& lhs,
++                                  const std::string& rhs) {
++  struct stat lhs_stat {};
++  struct stat rhs_stat {};
++  if (stat(lhs.c_str(), &lhs_stat) != 0 || stat(rhs.c_str(), &rhs_stat) != 0) {
++    return false;
++  }
++  return S_ISCHR(lhs_stat.st_mode) && S_ISCHR(rhs_stat.st_mode) &&
++         lhs_stat.st_rdev == rhs_stat.st_rdev;
++}
++
++static bool console_name_matches_device(const std::string& device,
++                                        std::string console_name) {
++  const auto comma = console_name.find(',');
++  if (comma != std::string::npos) {
++    console_name.resize(comma);
++  }
++  if (console_name.empty()) {
++    return false;
++  }
++  if (serial_device_basename(device) == console_name) {
++    return true;
++  }
++  return same_character_device(device, "/dev/" + console_name);
++}
++
++static bool text_lists_console(const std::string& text,
++                               const std::string& device,
++                               const bool cmdline_format) {
++  std::size_t position = 0;
++  while (position < text.size()) {
++    while (position < text.size() &&
++           (text[position] == ' ' || text[position] == '\t' ||
++            text[position] == '\n' || text[position] == '\r')) {
++      ++position;
++    }
++    const auto begin = position;
++    while (position < text.size() && text[position] != ' ' &&
++           text[position] != '\t' && text[position] != '\n' &&
++           text[position] != '\r') {
++      ++position;
++    }
++    if (begin == position) {
++      continue;
++    }
++    auto token = text.substr(begin, position - begin);
++    if (cmdline_format) {
++      static constexpr auto prefix = "console=";
++      if (token.rfind(prefix, 0) != 0) {
++        continue;
++      }
++      token.erase(0, sizeof("console=") - 1);
++    }
++    if (console_name_matches_device(device, token)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++static bool is_active_kernel_console(const std::string& device) {
++  if (device.empty()) {
++    return false;
++  }
++
++  // The BeagleY-AI debug header is permanently reserved for the serial console
++  // in this image profile. Compare both the configured name and device number
++  // so aliases such as /dev/serial0 cannot bypass the protection.
++  if (OHDPlatform::instance().is_beagley_ai() &&
++      (serial_device_basename(device) == "ttyS2" ||
++       same_character_device(device, "/dev/ttyS2"))) {
++    return true;
++  }
++
++  const auto active_consoles =
++      read_small_text_file("/sys/class/tty/console/active");
++  if (active_consoles.has_value() &&
++      text_lists_console(active_consoles.value(), device, false)) {
++    return true;
++  }
++
++  const auto cmdline = read_small_text_file("/proc/cmdline");
++  return cmdline.has_value() &&
++         text_lists_console(cmdline.value(), device, true);
++}
++
+ static void debug_poll_fd(const struct pollfd& poll_fd) {
+   std::stringstream ss;
+   ss << "Poll:{";
+@@ -182,6 +297,12 @@ int SerialEndpoint::setup_port(const SerialEndpoint::HWOptions& options,
+   if (!m_console) {
+     m_console = openhd::log::get_default();
+   }
++  if (is_active_kernel_console(options.linux_filename)) {
++    m_console->error("Refusing to open protected console UART {}",
++                     options.linux_filename);
++    return -1;
++  }
++
+   // Also see
+   // https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp/
+ 
+@@ -409,22 +530,34 @@ std::optional<std::string> serial_openhd_param_to_linux_fd(
+     // "" means disabled
+     return std::nullopt;
+   }
++  std::optional<std::string> resolved;
+   // Default mapping
+   if (OHDUtil::str_equal(param_name, "DEFAULT")) {
+     const auto platform = OHDPlatform::instance();
+     if (platform.is_rpi()) {
+-      return "/dev/serial0";
++      resolved = "/dev/serial0";
+     } else if (platform.is_x20() || platform.is_rock()) {
+-      return "dev/ttyS2";
++      resolved = "dev/ttyS2";
+     } else if (platform.is_luckfox_pico()) {
+-      return "dev/ttyS3";
++      resolved = "dev/ttyS3";
++    } else if (platform.is_beagley_ai()) {
++      // No implicit FC UART on BeagleY-AI. ttyS2 belongs to the Linux console.
++      return std::nullopt;
+     } else {
+       openhd::log::get_default()->debug(
+           "No default serial mapping for this platform");
+       // fallback
+-      return "dev/ttyS2";
++      resolved = "dev/ttyS2";
+     }
++  } else {
++    // Otherwise, the user can enter any serial FD name.
++    resolved = param_name;
++  }
++
++  if (resolved.has_value() && is_active_kernel_console(resolved.value())) {
++    openhd::log::get_default()->error(
++        "Refusing configured active kernel console UART {}", resolved.value());
++    return std::nullopt;
+   }
+-  // Otherwise, the user can enter any serial FD name
+-  return param_name;
++  return resolved;
+ }
+diff --git a/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp b/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
+index a75dd21a..f2860838 100644
+--- a/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
++++ b/OpenHD/ohd_telemetry/src/routing/MavlinkSystem.hpp
+@@ -24,6 +24,7 @@
+ #ifndef OPENHD_OPENHD_OHD_TELEMETRY_SRC_ROUTING_MAVLINKSYSTEM_H_
+ #define OPENHD_OPENHD_OHD_TELEMETRY_SRC_ROUTING_MAVLINKSYSTEM_H_
+ 
++#include <cstdint>
+ #include <map>
+ #include <memory>
+ #include <vector>
+diff --git a/OpenHD/ohd_video/inc/camera.hpp b/OpenHD/ohd_video/inc/camera.hpp
+index fc859e4d..19011ad4 100644
+--- a/OpenHD/ohd_video/inc/camera.hpp
++++ b/OpenHD/ohd_video/inc/camera.hpp
+@@ -93,6 +93,9 @@ struct XCamera {
+     return camera_type >= 130 && camera_type < 140;
+   }
+   bool requires_rockchip_rv_pipeline() const { return camera_type == 140; }
++  bool requires_ti_j722s_pipeline() const {
++    return camera_type >= 150 && camera_type < 160;
++  }
+   std::string cam_type_as_verbose_string() const {
+     return x_cam_type_to_string(camera_type);
+   }
+diff --git a/OpenHD/ohd_video/inc/camera_holder.h b/OpenHD/ohd_video/inc/camera_holder.h
+index 4ec184b0..c3816fd1 100644
+--- a/OpenHD/ohd_video/inc/camera_holder.h
++++ b/OpenHD/ohd_video/inc/camera_holder.h
+@@ -249,6 +249,21 @@ class CameraHolder :
+       // Better choice for the x20
+       ret.h26x_keyframe_interval = 8;
+     }
++    if (m_camera.requires_ti_j722s_pipeline()) {
++      // Native-R1 IMX219 defaults.
++      ret.h26x_bitrate_kbits = 3000;
++      ret.h26x_keyframe_interval = 15;
++    }
++    if (m_camera.camera_type == X_CAM_TYPE_TI_J722S_IMX708) {
++      // RF-qualified IMX708 720p60 baseline.
++      ret.h26x_bitrate_kbits = 6000;
++      ret.h26x_keyframe_interval = 30;
++    }
++    if (m_camera.camera_type == X_CAM_TYPE_TI_J722S_IMX415) {
++      // IMX415 R1 binned 720p30 baseline.
++      ret.h26x_bitrate_kbits = 6000;
++      ret.h26x_keyframe_interval = 15;
++    }
+     return ret;
+   }
+ };
+diff --git a/OpenHD/ohd_video/inc/gst_helper.hpp b/OpenHD/ohd_video/inc/gst_helper.hpp
+index 3af84836..b4a3073f 100644
+--- a/OpenHD/ohd_video/inc/gst_helper.hpp
++++ b/OpenHD/ohd_video/inc/gst_helper.hpp
+@@ -935,6 +935,189 @@ static std::string createRecordingForVideoCodec(
+   return ss.str();
+ }
+ 
++static std::string create_ti_j722s_imx219_stream(
++    const CameraSettings& settings) {
++  const int bitrate_bps =
++      openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
++  const int gop =
++      settings.h26x_keyframe_interval > 0 ? settings.h26x_keyframe_interval : 15;
++
++  std::stringstream ss;
++
++  ss << "v4l2src device=/run/ti-k3/camera-video "
++        "io-mode=dmabuf-import do-timestamp=true ! ";
++
++  ss << "video/x-bayer,format=rggb,width=1640,height=1232,"
++        "framerate=60/1 ! ";
++
++  ss << "tiovxisp "
++        "sensor-name=SENSOR_SONY_IMX219_RPI "
++        "dcc-isp-file=/opt/imaging/imx219/linear/"
++        "dcc_viss_1640x1232.bin "
++        "format-msb=7 "
++        "sink_0::pool-size=8 "
++        "src::pool-size=8 "
++        "sink_0::dcc-2a-file=/opt/imaging/imx219/linear/"
++        "dcc_2a_1640x1232.bin "
++        "sink_0::device=/run/ti-k3/camera-subdev ! ";
++
++  ss << "video/x-raw,format=NV12,width=1640,height=1232,"
++        "framerate=60/1 ! ";
++
++  ss << "tiovxmultiscaler target=0 ! ";
++
++  ss << "video/x-raw,format=NV12,width=1280,height=720,framerate=60/1 ! ";
++
++  ss << "queue max-size-buffers=1 max-size-bytes=0 "
++        "max-size-time=0 leaky=downstream ! ";
++
++  ss << fmt::format(
++      "v4l2h264enc name=ti_wave5_encoder output-io-mode=dmabuf-import "
++      "extra-controls=\"controls,"
++      "video_bitrate_mode=1,"
++      "vbv_buffer_size=10,"
++      "frame_level_rate_control_enable=1,"
++      "h264_mb_level_rate_control=1,"
++      "video_bitrate={},"
++      "video_gop_size={},"
++      "h264_level=10,"
++      "h264_profile=0,"
++      "prepend_sps_and_pps_to_idr=1\" ! ",
++      bitrate_bps, gop);
++
++  ss << "video/x-h264,stream-format=byte-stream,alignment=au,profile=(string)baseline,level=(string)3.2 ! ";
++
++  return ss.str();
++}
++
++static std::string create_ti_j722s_imx708_stream(
++    const CameraSettings& settings) {
++  const int bitrate_bps =
++      openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
++  const int gop =
++      settings.h26x_keyframe_interval > 0
++          ? settings.h26x_keyframe_interval
++          : 30;
++
++  std::stringstream ss;
++
++  ss << "v4l2src device=/run/ti-k3/camera-video "
++        "io-mode=dmabuf-import do-timestamp=true ! ";
++
++  ss << "video/x-bayer,format=rggb10le,width=1536,height=864,"
++        "framerate=60/1 ! ";
++
++  ss << "capssetter caps=\"video/x-bayer,format=rggb10\" "
++        "join=true replace=false ! ";
++
++  ss << "tiovxisp "
++        "sensor-name=SENSOR_SONY_IMX219_RPI "
++        "dcc-isp-file=/opt/imaging/imx708/linear/"
++        "dcc_viss_1536x864.bin "
++        "format-msb=9 "
++        "bypass-cac=true "
++        "bypass-dwb=true "
++        "sink_0::dcc-2a-file=/opt/imaging/imx708/linear/"
++        "dcc_2a_1536x864.bin "
++        "sink_0::device=/run/ti-k3/camera-subdev "
++        "sink_0::ae-mode=AE_MODE_DISABLED "
++        "sink_0::awb-mode=AWB_MODE_DISABLED "
++        "sink_0::pool-size=2 "
++        "src::pool-size=2 ! ";
++
++  ss << "video/x-raw,format=NV12,width=1536,height=864,"
++        "framerate=60/1 ! ";
++
++  ss << "tiovxmultiscaler target=0 ! ";
++
++  ss << "video/x-raw,format=NV12,width=1280,height=720,"
++        "framerate=60/1 ! ";
++
++  ss << "queue max-size-buffers=1 max-size-bytes=0 "
++        "max-size-time=0 leaky=downstream ! ";
++
++  ss << fmt::format(
++      "v4l2h264enc name=ti_wave5_encoder "
++      "extra-controls=\"controls,"
++      "frame_level_rate_control_enable=1,"
++      "video_bitrate={},"
++      "video_gop_size={},"
++      "prepend_sps_and_pps_to_idr=1\" ! ",
++      bitrate_bps, gop);
++
++  ss << "video/x-h264,width=1280,height=720,framerate=60/1,"
++        "profile=(string)baseline,level=(string)3.2,"
++        "stream-format=(string)byte-stream,"
++        "alignment=(string)au ! ";
++
++  return ss.str();
++}
++
++
++static std::string create_ti_j722s_imx415_stream(
++    const CameraSettings& settings) {
++  const int bitrate_bps =
++      openhd::kbits_to_bits_per_second(settings.h26x_bitrate_kbits);
++  const int gop =
++      settings.h26x_keyframe_interval > 0
++          ? settings.h26x_keyframe_interval
++          : 15;
++
++  std::stringstream ss;
++
++  // Qualified B0569 / IMX415 full-array sensor mode.
++  ss << "v4l2src device=/run/ti-k3/camera-video "
++        "io-mode=dmabuf-import do-timestamp=true ! ";
++
++  ss << "video/x-bayer,format=gbrg10le,width=3864,height=2192,"
++        "framerate=30/1 ! ";
++
++  // TI compatibility mapper expects the legacy Bayer spelling.
++  ss << "capssetter caps=\"video/x-bayer,format=gbrg10\" "
++        "join=true replace=false ! ";
++
++  // DCC ID 219 remains compatibility-only. AE/AWB stay disabled.
++  ss << "tiovxisp "
++        "sensor-name=SENSOR_SONY_IMX219_RPI "
++        "dcc-isp-file=/opt/imaging/imx415/linear/"
++        "dcc_viss_3864x2192.bin "
++        "format-msb=9 "
++        "bypass-cac=true "
++        "bypass-dwb=true "
++        "sink_0::dcc-2a-file=/opt/imaging/imx415/linear/"
++        "dcc_2a_3864x2192.bin "
++        "sink_0::device=/run/ti-k3/camera-subdev "
++        "sink_0::ae-mode=AE_MODE_DISABLED "
++        "sink_0::awb-mode=AWB_MODE_DISABLED "
++        "sink_0::pool-size=4 "
++        "src::pool-size=4 ! ";
++
++  ss << "video/x-raw,format=NV12,width=3864,height=2192,"
++        "framerate=30/1 ! ";
++
++  // Scale the full sensor frame directly to the FPV output.
++  ss << "tiovxmultiscaler target=0 ! ";
++
++  ss << "video/x-raw,format=NV12,width=1280,height=720,"
++        "framerate=30/1 ! ";
++
++  ss << "queue max-size-buffers=1 max-size-bytes=0 "
++        "max-size-time=0 leaky=downstream ! ";
++
++  ss << fmt::format(
++      "v4l2h264enc name=ti_wave5_encoder "
++      "extra-controls=\"controls,"
++      "frame_level_rate_control_enable=1,"
++      "video_bitrate={},"
++      "video_gop_size={},"
++      "prepend_sps_and_pps_to_idr=1\" ! ",
++      bitrate_bps, gop);
++
++  ss << "video/x-h264,stream-format=byte-stream,alignment=au ! ";
++
++  return ss.str();
++}
++
+ static std::string create_input_custom_udp_rtp_port(
+     const CameraSettings& settings) {
+   static constexpr auto input_port = 5500;
+diff --git a/OpenHD/ohd_video/misc/camera_registry.json b/OpenHD/ohd_video/misc/camera_registry.json
+index 173efb7b..0d0468a6 100644
+--- a/OpenHD/ohd_video/misc/camera_registry.json
++++ b/OpenHD/ohd_video/misc/camera_registry.json
+@@ -628,6 +628,33 @@
+         {"width": 1280, "height": 720, "fps": 60}
+       ]
+     },
++    {
++      "key": "X_CAM_TYPE_TI_J722S_IMX219",
++      "id": 150,
++      "name": "TI_J722S_IMX219",
++      "ui_label": "IMX219",
++      "resolutions": [
++        {"width": 1280, "height": 720, "fps": 60}
++      ]
++    },
++    {
++      "key": "X_CAM_TYPE_TI_J722S_IMX708",
++      "id": 151,
++      "name": "TI_J722S_IMX708",
++      "ui_label": "IMX708",
++      "resolutions": [
++        {"width": 1280, "height": 720, "fps": 60}
++      ]
++    },
++    {
++      "key": "X_CAM_TYPE_TI_J722S_IMX415",
++      "id": 152,
++      "name": "TI_J722S_IMX415",
++      "ui_label": "IMX415",
++      "resolutions": [
++        {"width": 1280, "height": 720, "fps": 30}
++      ]
++    },
+     {"key": "X_CAM_TYPE_DISABLED", "id": 255, "name": "DISABLED", "ui_label": "DISABLE"}
+   ],
+   "manufacturer_groups": [
+@@ -790,6 +817,15 @@
+         "X_CAM_TYPE_NXP_IMX8_V4L2"
+       ]
+     },
++    {
++      "key": "TI_J722S",
++      "name": "Texas Instruments",
++      "cameras": [
++        "X_CAM_TYPE_TI_J722S_IMX219",
++        "X_CAM_TYPE_TI_J722S_IMX708",
++        "X_CAM_TYPE_TI_J722S_IMX415"
++      ]
++    },
+     {
+       "key": "LUCKFOX",
+       "name": "LUCKFOX",
+@@ -851,6 +887,10 @@
+       "platform": "X_PLATFORM_TYPE_NXP_IMX8",
+       "manufacturers": ["NXP", "USB", "DEBUG"]
+     },
++    {
++      "platform": "X_PLATFORM_TYPE_TI_AM67A_BEAGLEY_AI",
++      "manufacturers": ["TI_J722S", "USB", "DEBUG"]
++    },
+     {
+       "platform": "X_PLATFORM_TYPE_LUCKFOX_RV110X",
+       "manufacturers": ["LUCKFOX"]
+diff --git a/OpenHD/ohd_video/src/gstreamerstream.cpp b/OpenHD/ohd_video/src/gstreamerstream.cpp
+index 94ee6635..a834c8d6 100644
+--- a/OpenHD/ohd_video/src/gstreamerstream.cpp
++++ b/OpenHD/ohd_video/src/gstreamerstream.cpp
+@@ -191,6 +191,16 @@ std::string GStreamerStream::create_source_encode_pipeline(
+     openhd::log::get_default()->debug(
+         "Camera requires NXP i.MX8 V4L2 pipeline.");
+     pipeline << OHDGstHelper::create_nxp_imx8_v4l2_stream(setting);
++  } else if (camera.requires_ti_j722s_pipeline()) {
++    openhd::log::get_default()->debug(
++        "Camera requires TI J722S native pipeline.");
++    if (camera.camera_type == X_CAM_TYPE_TI_J722S_IMX708) {
++      pipeline << OHDGstHelper::create_ti_j722s_imx708_stream(setting);
++    } else if (camera.camera_type == X_CAM_TYPE_TI_J722S_IMX415) {
++      pipeline << OHDGstHelper::create_ti_j722s_imx415_stream(setting);
++    } else {
++      pipeline << OHDGstHelper::create_ti_j722s_imx219_stream(setting);
++    }
+   } else if (is_usb_camera(camera.camera_type)) {
+     openhd::log::get_default()->warn("Detected USB camera.");
+     const auto v4l2_device_name =
+@@ -269,11 +279,16 @@ void GStreamerStream::setup() {
+     /*pipeline_content << "video/x-h264,stream-format=byte-stream ! ";
+     pipeline_content << OHDGstHelper::createOutputAppSink();*/
+   } else {
+-    const int rtp_fragment_size = 1440;
++    const int rtp_fragment_size =
++        camera.requires_ti_j722s_pipeline() ? 1024 : 1440;
+     m_console->debug("Using {} for rtp fragmentation", rtp_fragment_size);
+     pipeline_content << OHDGstHelper::create_parse_and_rtp_packetize(
+         setting.streamed_video_format.videoCodec, rtp_fragment_size);
+-    pipeline_content << OHDGstHelper::createOutputAppSink();
++    // TI/OpenHD RTP is bursty: a one-buffer dropping appsink loses RTP
++    // fragments within a video access unit before they reach WiFiBroadcast.
++    pipeline_content
++        << " appsink max-buffers=256 drop=true sync=false "
++           "name=out_appsink wait-on-eos=false";
+   }
+   if (ADD_RECORDING_TO_PIPELINE) {
+     const auto recording_filename =
+@@ -403,6 +418,9 @@ void GStreamerStream::request_restart() { m_request_restart = true; }
+ 
+ void GStreamerStream::handle_change_bitrate_request(
+     openhd::LinkActionHandler::LinkBitrateInformation lb) {
++  if (m_camera_holder->get_camera().requires_ti_j722s_pipeline()) {
++    return;
++  }
+   // m_console->debug("handle_change_bitrate_request prev: {} new:{}",
+   //                  kbits_per_second_to_string(m_curr_dynamic_bitrate_kbits),
+   //                  kbits_per_second_to_string(lb.recommended_encoder_bitrate_kbits));
+diff --git a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+index f16238d0..646eb8ca 100644
+--- a/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
++++ b/OpenHD/ohd_video/src/ohd_video_air_generic_settings.cpp
+@@ -116,6 +116,8 @@ AirCameraGenericSettings AirCameraGenericSettingsHolder::create_default()
+   } else if (OHDPlatform::instance().platform_type ==
+              X_PLATFORM_TYPE_LUCKFOX_RV110X) {
+     ret.primary_camera_type = X_CAM_TYPE_ROCKCHIP_RV110X;
++  } else if (OHDPlatform::instance().is_beagley_ai()) {
++    ret.primary_camera_type = X_CAM_TYPE_TI_J722S_IMX708;
+   }
+ 
+   return ret;
+diff --git a/OpenHD/ohd_video/src/validate_settings.cpp b/OpenHD/ohd_video/src/validate_settings.cpp
+index 4877e1aa..35680110 100644
+--- a/OpenHD/ohd_video/src/validate_settings.cpp
++++ b/OpenHD/ohd_video/src/validate_settings.cpp
+@@ -24,6 +24,7 @@
+ #include "validate_settings.h"
+ 
+ #include <regex>
++#include <sstream>
+ 
+ #include "openhd_spdlog.h"
+ #include "openhd_spdlog_include.h"
+diff --git a/install_build_dep.sh b/install_build_dep.sh
+index ea0dffb4..cd79926e 100755
+--- a/install_build_dep.sh
++++ b/install_build_dep.sh
+@@ -28,7 +28,7 @@ PLATFORM="$1"
+ 
+ 
+ BASE_PACKAGES="libpoco-dev clang-format libusb-1.0-0-dev libpcap-dev libsodium-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev libsdl2-dev"
+-VIDEO_PACKAGES="libgstreamer-plugins-base1.0-dev libv4l-dev"
++VIDEO_PACKAGES="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libv4l-dev"
+ BUILD_PACKAGES="git build-essential autotools-dev automake libtool python3-pip autoconf apt-transport-https ruby-dev cmake"
+ 
+ 
+@@ -43,6 +43,10 @@ PLATFORM_PACKAGES_REMOVE=""
+ function install_rock_packages {
+ PLATFORM_PACKAGES="libpoco-dev gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
+ PLATFORM_PACKAGES_REMOVE=""
++}
++function install_beagley_ai_packages {
++PLATFORM_PACKAGES="gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav v4l-utils"
++PLATFORM_PACKAGES_REMOVE=""
+ }
+ 
+  # Add OpenHD Repository platform-specific packages
+@@ -60,8 +64,11 @@ PLATFORM_PACKAGES_REMOVE=""
+     install_x86_packages
+  elif [[ "${PLATFORM}" == "rock5" ]] ; then
+     install_rock_packages
++ elif [[ "${PLATFORM}" == "beagley-ai" ]] ; then
++    install_beagley_ai_packages
+  else
+     echo "platform not supported"
++    exit 1
+  fi
+ 
+ 
+diff --git a/package.sh b/package.sh
+index dc7d9c11..ef96e91a 100755
+--- a/package.sh
++++ b/package.sh
+@@ -46,7 +46,7 @@ create_package_directory() {
+     if [[ "${PACKAGE_ARCH}" == "armhf" && "${OS}" == "raspbian" ]]; then
+       echo "Using Raspberry Pi-specific systemd service for armhf Bullseye"
+       cp systemd/openhd_rpi.service "${PKGDIR}etc/systemd/system/openhd.service"
+-    elif [[ "${CUSTOM}" == "standard" ]]; then
++    elif [[ "${CUSTOM}" == "standard" || "${CUSTOM}" == "beagley-ai" ]]; then
+       cp systemd/openhd.service "${PKGDIR}etc/systemd/system/openhd.service"
+     else
+       cp systemd/openhd-x20.service "${PKGDIR}etc/systemd/system/openhd.service"
+@@ -88,6 +88,16 @@ build_package() {
+         gstreamer1.0-plugins-{base,good,bad} gstreamer1.0-tools
+       )
+     fi
++  elif [[ "${PACKAGE_ARCH}" == "arm64" ]]; then
++    package_name="openhd"
++    packages+=(
++      libpoco-dev iw nmap aircrack-ng i2c-tools libv4l-dev
++      libusb-1.0-0 libpcap-dev libnl-3-dev libnl-genl-3-dev
++      libnl-route-3-dev libsdl2-2.0-0 libsodium-dev
++      gstreamer1.0-plugins-base gstreamer1.0-plugins-good
++      gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
++      gstreamer1.0-libav gstreamer1.0-tools
++    )
+   elif [[ "${PACKAGE_ARCH}" == "x86_64" ]]; then
+     packages+=(
+       libpoco-dev dkms qopenhd git iw nmap aircrack-ng i2c-tools libv4l-dev
+diff --git a/systemd/openhd.service b/systemd/openhd.service
+index abe3ccec..b9cd1067 100644
+--- a/systemd/openhd.service
++++ b/systemd/openhd.service
+@@ -28,12 +28,15 @@
+ 
+ [Unit]
+ Description=OpenHD
+-After=NetworkManager.service
++After=network-online.target openhd-sys-utils.service
++Wants=network-online.target
++Requires=openhd-sys-utils.service
+ 
+ [Service]
+ User=root
+ Environment="LIBCAMERA_LOG_LEVELS=*:ERROR"
+-ExecStart=/usr/local/bin/openhd
++EnvironmentFile=-/etc/default/openhd
++ExecStart=/usr/local/bin/openhd $OPENHD_ARGS
+ Restart=always
+ RestartSec=3
+ 
